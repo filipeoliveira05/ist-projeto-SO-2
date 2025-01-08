@@ -2,25 +2,25 @@
 #define KEY_VALUE_STORE_H
 #define TABLE_SIZE 26
 
-#include <stddef.h>
 #include <pthread.h>
+#include <stddef.h>
 
 typedef struct KeyNode {
-    char *key;
-    char *value;
-    struct KeyNode *next;
+  char *key;
+  char *value;
+  struct KeyNode *next;
 } KeyNode;
 
 typedef struct HashTable {
-    KeyNode *table[TABLE_SIZE];
-    pthread_rwlock_t tablelock;
+  KeyNode *table[TABLE_SIZE];
+  pthread_rwlock_t tablelock;
 } HashTable;
 
 /// Creates a new KVS hash table.
 /// @return Newly created hash table, NULL on failure
 struct HashTable *create_hash_table();
 
-int hash(const char *key); 
+int hash(const char *key);
 
 // Writes a key value pair in the hash table.
 // @param ht The hash table.
@@ -33,7 +33,7 @@ int write_pair(HashTable *ht, const char *key, const char *value);
 // @param ht The hash table.
 // @param key The key.
 // return the value if found, NULL otherwise.
-char* read_pair(HashTable *ht, const char *key);
+char *read_pair(HashTable *ht, const char *key);
 
 /// Deletes a pair from the table.
 /// @param ht Hash table to read from.
@@ -45,5 +45,4 @@ int delete_pair(HashTable *ht, const char *key);
 /// @param ht Hash table to be deleted.
 void free_table(HashTable *ht);
 
-
-#endif  // KVS_H
+#endif // KVS_H

@@ -99,51 +99,52 @@ enum Command get_next(int fd) {
   }
 
   switch (buf[0]) {
-    case 'S':
-      if (read(fd, buf + 1, 9) != 9 || strncmp(buf, "SUBSCRIBE ", 10) != 0) {
-        cleanup(fd);
-        return CMD_INVALID;
-      }
-
-      return CMD_SUBSCRIBE;
-
-    case 'U':
-      if (read(fd, buf + 1, 11) != 11 || strncmp(buf, "UNSUBSCRIBE ", 12) != 0) {
-        cleanup(fd);
-        return CMD_INVALID;
-      }
-
-      return CMD_UNSUBSCRIBE;
-
-    case 'D':
-      if (read(fd, buf + 1, 5) != 5 || strncmp(buf, "DELAY ", 6) != 0) {
-        if (read(fd, buf + 6, 4) != 4 || strncmp(buf, "DISCONNECT", 10) != 0) {
-          cleanup(fd);
-          return CMD_INVALID;
-        }
-        if (read(fd, buf + 10, 1) != 0 && buf[10] != '\n') {
-          cleanup(fd);
-          return CMD_INVALID;
-        }
-        return CMD_DISCONNECT;
-      }
-
-      return CMD_DELAY;
-
-    case '#':
-      cleanup(fd);
-      return CMD_EMPTY;
-
-    case '\n':
-      return CMD_EMPTY;
-
-    default:
+  case 'S':
+    if (read(fd, buf + 1, 9) != 9 || strncmp(buf, "SUBSCRIBE ", 10) != 0) {
       cleanup(fd);
       return CMD_INVALID;
+    }
+
+    return CMD_SUBSCRIBE;
+
+  case 'U':
+    if (read(fd, buf + 1, 11) != 11 || strncmp(buf, "UNSUBSCRIBE ", 12) != 0) {
+      cleanup(fd);
+      return CMD_INVALID;
+    }
+
+    return CMD_UNSUBSCRIBE;
+
+  case 'D':
+    if (read(fd, buf + 1, 5) != 5 || strncmp(buf, "DELAY ", 6) != 0) {
+      if (read(fd, buf + 6, 4) != 4 || strncmp(buf, "DISCONNECT", 10) != 0) {
+        cleanup(fd);
+        return CMD_INVALID;
+      }
+      if (read(fd, buf + 10, 1) != 0 && buf[10] != '\n') {
+        cleanup(fd);
+        return CMD_INVALID;
+      }
+      return CMD_DISCONNECT;
+    }
+
+    return CMD_DELAY;
+
+  case '#':
+    cleanup(fd);
+    return CMD_EMPTY;
+
+  case '\n':
+    return CMD_EMPTY;
+
+  default:
+    cleanup(fd);
+    return CMD_INVALID;
   }
 }
 
-size_t parse_list(int fd, char keys[][MAX_STRING_SIZE], size_t max_keys, size_t max_string_size) {
+size_t parse_list(int fd, char keys[][MAX_STRING_SIZE], size_t max_keys,
+                  size_t max_string_size) {
   char ch;
 
   if (read(fd, &ch, 1) != 1 || ch != '[') {

@@ -1,12 +1,22 @@
 #include <limits.h>
-#include <stdlib.h>
-#include <unistd.h>
+#include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 void write_str(int fd, const char *str) {
   size_t len = strlen(str);
+  const char *ptr = str;
+
   while (len > 0) {
-    len -= (size_t)write(fd, str, len);
+    ssize_t written = write(fd, ptr, len);
+
+    if (written < 0) {
+      perror("Error writing string");
+      break;
+    }
+
+    ptr += written;
+    len -= (size_t)written;
   }
 }
 
@@ -27,9 +37,9 @@ void write_uint(int fd, int value) {
   }
 }
 
-size_t strn_memcpy(char* dest, const char* src, size_t n) {
-    // strnlen is async signal safe in recent versions of POSIX
-    size_t bytes_to_copy = strnlen(src, n);
-    memcpy(dest, src, bytes_to_copy);
-    return bytes_to_copy;
+size_t strn_memcpy(char *dest, const char *src, size_t n) {
+  // strnlen is async signal safe in recent versions of POSIX
+  size_t bytes_to_copy = strnlen(src, n);
+  memcpy(dest, src, bytes_to_copy);
+  return bytes_to_copy;
 }
