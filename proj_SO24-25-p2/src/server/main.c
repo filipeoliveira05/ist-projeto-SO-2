@@ -276,12 +276,13 @@ static void dispatch_threads(DIR *dir) {
 }
 
 int main(int argc, char **argv) {
-  if (argc < 4) {
+  if (argc < 5) {
     write_str(STDERR_FILENO, "Usage: ");
     write_str(STDERR_FILENO, argv[0]);
     write_str(STDERR_FILENO, " <jobs_dir>");
     write_str(STDERR_FILENO, " <max_threads>");
-    write_str(STDERR_FILENO, " <max_backups> \n");
+    write_str(STDERR_FILENO, " <max_backups>");
+    write_str(STDERR_FILENO, " <register_FIFO_name> \n");
     return 1;
   }
 

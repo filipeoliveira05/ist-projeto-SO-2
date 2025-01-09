@@ -17,6 +17,8 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
+  char* register_pipe_path = argv[2];
+
   char req_pipe_path[256] = "/tmp/req";
   char resp_pipe_path[256] = "/tmp/resp";
   char notif_pipe_path[256] = "/tmp/notif";
@@ -25,11 +27,20 @@ int main(int argc, char *argv[]) {
   unsigned int delay_ms;
   size_t num;
 
+  // Permite ao cliente receber notificações
+  int notif_pipe_fd;
+
+
   strncat(req_pipe_path, argv[1], strlen(argv[1]) * sizeof(char));
   strncat(resp_pipe_path, argv[1], strlen(argv[1]) * sizeof(char));
   strncat(notif_pipe_path, argv[1], strlen(argv[1]) * sizeof(char));
 
   // TODO open pipes
+  if (kvs_connect(req_pipe_path, resp_pipe_path, notif_pipe_path, register_pipe_path, &notif_pipe_fd) != 0) {
+    fprintf(stderr, "Failed to connect to the server\n");
+    return 1;
+  }
+
 
   while (1) {
     switch (get_next(STDIN_FILENO)) {
