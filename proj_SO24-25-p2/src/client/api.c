@@ -102,6 +102,8 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path,
   }
 
   /* criar pipes */
+
+  printf("VAI CRIAR FIFOS");
   if (mkfifo(req_pipe_path, 0640) != 0) {
     perror("mkfifo failed");
     exit(EXIT_FAILURE);

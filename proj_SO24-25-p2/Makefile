@@ -4,9 +4,8 @@ CC = gcc
 CFLAGS = -g -std=c17 -D_POSIX_C_SOURCE=200809L -I. \
 		 -Wall -Wextra \
 		 -Wcast-align -Wconversion -Wfloat-equal -Wformat=2 -Wnull-dereference -Wshadow -Wsign-conversion -Wswitch-enum -Wundef -Wunreachable-code -Wunused \
-		 -pthread -fPIE
+		 -pthread
 # -fsanitize=address -fsanitize=undefined 
-
 
 ifneq ($(shell uname -s),Darwin) # if not MacOS
 	CFLAGS += -fmax-errors=5
@@ -14,14 +13,14 @@ endif
 
 all: src/server/kvs src/client/client
 
-src/server/kvs: src/common/protocol.h src/common/constants.h src/server/main.c src/server/operations.o src/server/kvs.o src/server/io.o src/server/parser.o src/common/io.o
-	$(CC) $(CFLAGS) -pie $(SLEEP) -o $@ $^
+src/server/kvs: src/server/main.o src/server/operations.o src/server/kvs.o src/server/io.o src/server/parser.o src/common/io.o
+	$(CC) $(CFLAGS) -o $@ $^
 
-src/client/client: src/common/protocol.h src/common/constants.h src/client/main.c src/client/api.o src/client/parser.o src/common/io.o
-	$(CC) $(CFLAGS) -pie -o $@ $^
+src/client/client: src/client/main.o src/client/api.o src/client/parser.o src/common/io.o
+	$(CC) $(CFLAGS) -o $@ $^
 
 %.o: %.c %.h
-	$(CC) $(CFLAGS) -c ${@:.o=.c} -o $@
+	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
 	rm -f src/common/*.o src/client/*.o src/server/*.o src/server/core/*.o src/server/kvs src/client/client src/client/client_write

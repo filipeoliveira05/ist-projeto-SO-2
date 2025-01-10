@@ -6,9 +6,15 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 #include <unistd.h>
+#include <semaphore.h>
+#include <errno.h>
+
+
 
 #include "constants.h"
+#include "../common/constants.h"
 #include "io.h"
 #include "operations.h"
 #include "parser.h"
@@ -22,10 +28,20 @@ struct SharedData {
 
 pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t n_current_backups_lock = PTHREAD_MUTEX_INITIALIZER;
+sem_t SEM_BUFFER_SPACE;
+sem_t SEM_BUFFER_CLIENTS;
+pthread_mutex_t BUFFER_MUTEX;
+
+char BUFFER[MAX_SESSION_COUNT][1 + 3 * MAX_PIPE_PATH_LENGTH] = {0};
+int BUFFER_RD_IND = 0;
+int BUFFER_WR_IND = 0;
+
+
 
 size_t active_backups = 0; // Number of active backups
 size_t max_backups;        // Maximum allowed simultaneous backups
 size_t max_threads;        // Maximum allowed simultaneous threads
+char *register_FIFO_name = NULL;
 char *jobs_directory = NULL;
 
 int filter_job_files(const struct dirent *entry) {
@@ -236,6 +252,54 @@ static void *get_file(void *arguments) {
   pthread_exit(NULL);
 }
 
+
+void *main_FIFO() {
+
+  // Remove o pipe, se existir
+  if (unlink(register_FIFO_name) != 0 && errno != ENOENT) {
+    perror("unlink failed");
+    pthread_exit(NULL); // Exit thread instead of the whole process
+  }
+
+  // Cria o pipe
+  if (mkfifo(register_FIFO_name, 0640) != 0) {
+    perror("mkfifo failed");
+    pthread_exit(NULL);
+  }
+
+  int fifo_fd = open(register_FIFO_name, O_RDONLY);
+  if (fifo_fd == -1) {
+    perror("Failed to open FIFO");
+    pthread_exit(NULL);
+  }
+
+  while (1) {
+    sem_wait(&SEM_BUFFER_SPACE);
+
+    ssize_t bytes_read = read(fifo_fd, BUFFER[BUFFER_WR_IND], 1 + 3 * MAX_PIPE_PATH_LENGTH);
+    if (bytes_read == 0) {
+      // EOF - Break the loop for cleanup
+      fprintf(stderr, "pipe closed\n");
+      break;
+    } else if (bytes_read == -1) {
+      fprintf(stderr, "read failed: %s\n", strerror(errno));
+      break; // Exit the loop on read failure
+    }
+
+    // Update write index and signal clients
+    BUFFER_WR_IND = (BUFFER_WR_IND + 1) % MAX_SESSION_COUNT;
+    sem_post(&SEM_BUFFER_CLIENTS);
+  }
+
+  // Cleanup resources
+
+  close(fifo_fd);
+  unlink(register_FIFO_name);
+  pthread_exit(NULL); // Ensure proper thread exit
+}
+
+
+
 static void dispatch_threads(DIR *dir) {
   pthread_t *threads = malloc(max_threads * sizeof(pthread_t));
 
@@ -258,6 +322,19 @@ static void dispatch_threads(DIR *dir) {
   }
 
   // ler do FIFO de registo
+
+  pthread_t FIFO_register_thread;
+  pthread_mutex_init(&BUFFER_MUTEX, NULL);
+  pthread_create(&FIFO_register_thread, NULL, main_FIFO, NULL);
+
+  // sem_init(&SEM_BUFFER_SPACE, 0, MAX_SESSION_COUNT);
+  // sem_init(&SEM_BUFFER_CLIENTS, 0, 0);
+  // pthread_t manager_threads[MAX_SESSION_COUNT];
+  // for (int i = 0; i < MAX_SESSION_COUNT; i++) {
+  //   pthread_create(&manager_threads[i], NULL, thread_manager, &thread_data);
+  // }
+
+
 
   for (unsigned int i = 0; i < max_threads; i++) {
     if (pthread_join(threads[i], NULL) != 0) {
@@ -297,6 +374,7 @@ int main(int argc, char **argv) {
   }
 
   max_threads = strtoul(argv[2], &endptr, 10);
+ 
 
   if (*endptr != '\0') {
     fprintf(stderr, "Invalid max_threads value\n");
@@ -312,6 +390,12 @@ int main(int argc, char **argv) {
     write_str(STDERR_FILENO, "Invalid number of threads\n");
     return 0;
   }
+  
+  register_FIFO_name = argv[4];
+  if (register_FIFO_name == NULL || strlen(register_FIFO_name) == 0) {
+    write_str(STDERR_FILENO, "Invalid or empty FIFO name\n");
+    return 1;
+}
 
   if (kvs_init()) {
     write_str(STDERR_FILENO, "Failed to initialize KVS\n");
