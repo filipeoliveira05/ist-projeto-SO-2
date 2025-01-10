@@ -299,6 +299,121 @@ void *main_FIFO() {
 }
 
 
+void *thread_manage_session(void *arg) {
+  struct SharedData *data = (struct SharedData *)arg;
+
+  char client_paths[1 + 3 * MAX_PIPE_PATH_LENGTH];
+  while (1) {
+    sem_wait(&SEM_BUFFER_CLIENTS);
+    pthread_mutex_lock(&BUFFER_MUTEX);
+    
+    // Lê do buffer global
+    // Lock necessário, visto que tas as threads gestoras podem alterar o indice
+    strncpy(client_paths, BUFFER[BUFFER_RD_IND], (1 + 3 * MAX_PIPE_PATH_LENGTH));
+
+    BUFFER_RD_IND = (BUFFER_RD_IND + 1) % MAX_SESSION_COUNT;
+    pthread_mutex_unlock(&BUFFER_MUTEX);
+    sem_post(&SEM_BUFFER_SPACE);
+
+    // OP_CODE=1 | nome do pipe do cliente (para pedidos) | nome do pipe do cliente (para respostas) | nome do pipe do cliente (para notificações)
+    int op_code_1;
+    char req_pipe_path[MAX_PIPE_PATH_LENGTH];
+    char resp_pipe_path[MAX_PIPE_PATH_LENGTH];
+    char notif_pipe_path[MAX_PIPE_PATH_LENGTH];
+    
+    sscanf(client_paths, "%d%s%s%s", &op_code_1, req_pipe_path, resp_pipe_path, notif_pipe_path);
+    
+    // importante: abrir os pipes pela ordem que abres no cliente em api.c com a flag contrária
+    int resp_fd = open(resp_pipe_path, O_WRONLY);
+    if(resp_fd == -1) {
+      perror("Failed to open FIFO");
+      exit(EXIT_FAILURE);
+    }
+    int req_fd = open(req_pipe_path, O_RDONLY);
+    if(req_fd == -1) {
+      perror("Failed to open FIFO");
+      exit(EXIT_FAILURE);
+    }
+    int notif_fd = open(notif_pipe_path, O_WRONLY);
+    if(notif_fd == -1) {
+      perror("Failed to open FIFO");
+      exit(EXIT_FAILURE);
+    }
+
+    send_msg(resp_fd, "10");
+
+    char request[42] = {0};
+    while(1) {
+      // Ler do pipe de pedidos
+      ssize_t bytes_read = read(req_fd, request, sizeof(request));
+      if (bytes_read == 0) {
+        // bytes_read == 0 indica EOF
+        fprintf(stderr, "pipe closed\n");
+        break; // FIXME is it supposed to return?
+      } else if (bytes_read == -1) {
+        // bytes_read == -1 indica erro
+        fprintf(stderr, "read failed: %s\n", strerror(errno));
+        exit(EXIT_FAILURE); // FIXME is it supposed to return?
+      }
+    
+      //parse request
+      char op_code = request[0];
+      char key[41];
+
+      char response[2];
+      response[0] = op_code;
+
+      int result;
+
+      switch (op_code) {
+        case 2: //disconnect
+          // OP_CODE=2
+
+          //FIXME unsubscribe clients keys
+
+          //FIXME send message according to successeful operations
+          //response[1] = result+'0';
+          send_msg(notif_fd, response);
+
+          break;
+          
+        case 3: //subscribe
+          // OP_CODE=3 | key
+          strncpy(key, request + 1, 41);
+          result = kvs_subscribe(key, notif_fd, data);
+          response[1] = (char) result+'0';
+          send_msg(notif_fd, response);
+
+          break;
+          
+        case 4: //unsubscribe
+          // OP_CODE=4 | key
+          strncpy(key, request + 1, 41);
+          result = kvs_unsubscribe(key, notif_fd, data);
+          response[1] = (char) result+'0';
+          send_msg(notif_fd, response);
+
+          break;
+
+        default:
+          fprintf(stderr, "Invalid command, op_code unrecognized\n");
+          break;
+      }
+
+      // exits inner while loop
+      if (op_code == 2) {
+        break;
+      }
+      
+    }
+    close(resp_fd);
+    close(req_fd);
+    close(notif_fd);
+  } 
+}
+
+
+
 
 static void dispatch_threads(DIR *dir) {
   pthread_t *threads = malloc(max_threads * sizeof(pthread_t));
