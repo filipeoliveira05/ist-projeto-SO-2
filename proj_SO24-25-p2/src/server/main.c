@@ -11,8 +11,6 @@
 #include <unistd.h>
 #include <errno.h>
 
-
-
 #include "constants.h"
 #include "../common/constants.h"
 #include "io.h"
@@ -20,65 +18,67 @@
 #include "parser.h"
 #include "pthread.h"
 
-
-
 pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t n_current_backups_lock = PTHREAD_MUTEX_INITIALIZER;
 sem_t SEM_BUFFER_SPACE;
 sem_t SEM_BUFFER_CLIENTS;
 pthread_mutex_t BUFFER_MUTEX;
 
-char BUFFER[MAX_SESSION_COUNT][1 + 3 * MAX_PIPE_PATH_LENGTH] = {0};
-int BUFFER_RD_IND = 0;
-int BUFFER_WR_IND = 0;
-
-
-
 size_t active_backups = 0; // Number of active backups
 size_t max_backups;        // Maximum allowed simultaneous backups
 size_t max_threads;        // Maximum allowed simultaneous threads
-char *register_FIFO_name = NULL;
+char register_FIFO_name[256];
 char *jobs_directory = NULL;
+int server_pipe_fd;
 
-
+char req_pipe_path[MAX_PIPE_PATH_LENGTH + 1];
+char resp_pipe_path[MAX_PIPE_PATH_LENGTH + 1];
+char notif_pipe_path[MAX_PIPE_PATH_LENGTH + 1];
 
 /**
  * helper function to send messages
  * retries to send whatever was not sent in the beginning
  */
-void send_msg(int fd, char const *str) {
-    size_t len = strlen(str);
-    size_t written = 0;
+void send_msg(int fd, char const *str)
+{
+  size_t len = strlen(str);
+  size_t written = 0;
 
-    while (written < len) {
-        ssize_t ret = write(fd, str + written, len - written);
-        if (ret < 0) {
-            perror("Write failed");
-            exit(EXIT_FAILURE);
-        }
-
-        written += (size_t)ret;
+  while (written < len)
+  {
+    ssize_t ret = write(fd, str + written, len - written);
+    if (ret < 0)
+    {
+      perror("Write failed");
+      exit(EXIT_FAILURE);
     }
+
+    written += (size_t)ret;
+  }
 }
 
-
-int filter_job_files(const struct dirent *entry) {
+int filter_job_files(const struct dirent *entry)
+{
   const char *dot = strrchr(entry->d_name, '.');
-  if (dot != NULL && strcmp(dot, ".job") == 0) {
+  if (dot != NULL && strcmp(dot, ".job") == 0)
+  {
     return 1; // Keep this file (it has the .job extension)
   }
   return 0;
 }
 
 static int entry_files(const char *dir, struct dirent *entry, char *in_path,
-                       char *out_path) {
+                       char *out_path)
+{
   const char *dot = strrchr(entry->d_name, '.');
   if (dot == NULL || dot == entry->d_name || strlen(dot) != 4 ||
-      strcmp(dot, ".job")) {
+      strcmp(dot, ".job"))
+  {
     return 1;
   }
 
-  if (strlen(entry->d_name) + strlen(dir) + 2 > MAX_JOB_FILE_NAME_SIZE) {
+  if (strlen(entry->d_name) + strlen(dir) + 2 > MAX_JOB_FILE_NAME_SIZE)
+  {
     fprintf(stderr, "%s/%s\n", dir, entry->d_name);
     return 1;
   }
@@ -93,24 +93,29 @@ static int entry_files(const char *dir, struct dirent *entry, char *in_path,
   return 0;
 }
 
-static int run_job(int in_fd, int out_fd, char *filename) {
+static int run_job(int in_fd, int out_fd, char *filename)
+{
   size_t file_backups = 0;
-  while (1) {
+  while (1)
+  {
     char keys[MAX_WRITE_SIZE][MAX_STRING_SIZE] = {0};
     char values[MAX_WRITE_SIZE][MAX_STRING_SIZE] = {0};
     unsigned int delay;
     size_t num_pairs;
 
-    switch (get_next(in_fd)) {
+    switch (get_next(in_fd))
+    {
     case CMD_WRITE:
       num_pairs =
           parse_write(in_fd, keys, values, MAX_WRITE_SIZE, MAX_STRING_SIZE);
-      if (num_pairs == 0) {
+      if (num_pairs == 0)
+      {
         write_str(STDERR_FILENO, "Invalid command. See HELP for usage\n");
         continue;
       }
 
-      if (kvs_write(num_pairs, keys, values)) {
+      if (kvs_write(num_pairs, keys, values))
+      {
         write_str(STDERR_FILENO, "Failed to write pair\n");
       }
       break;
@@ -119,12 +124,14 @@ static int run_job(int in_fd, int out_fd, char *filename) {
       num_pairs =
           parse_read_delete(in_fd, keys, MAX_WRITE_SIZE, MAX_STRING_SIZE);
 
-      if (num_pairs == 0) {
+      if (num_pairs == 0)
+      {
         write_str(STDERR_FILENO, "Invalid command. See HELP for usage\n");
         continue;
       }
 
-      if (kvs_read(num_pairs, keys, out_fd)) {
+      if (kvs_read(num_pairs, keys, out_fd))
+      {
         write_str(STDERR_FILENO, "Failed to read pair\n");
       }
       break;
@@ -133,12 +140,14 @@ static int run_job(int in_fd, int out_fd, char *filename) {
       num_pairs =
           parse_read_delete(in_fd, keys, MAX_WRITE_SIZE, MAX_STRING_SIZE);
 
-      if (num_pairs == 0) {
+      if (num_pairs == 0)
+      {
         write_str(STDERR_FILENO, "Invalid command. See HELP for usage\n");
         continue;
       }
 
-      if (kvs_delete(num_pairs, keys, out_fd)) {
+      if (kvs_delete(num_pairs, keys, out_fd))
+      {
         write_str(STDERR_FILENO, "Failed to delete pair\n");
       }
       break;
@@ -148,12 +157,14 @@ static int run_job(int in_fd, int out_fd, char *filename) {
       break;
 
     case CMD_WAIT:
-      if (parse_wait(in_fd, &delay, NULL) == -1) {
+      if (parse_wait(in_fd, &delay, NULL) == -1)
+      {
         write_str(STDERR_FILENO, "Invalid command. See HELP for usage\n");
         continue;
       }
 
-      if (delay > 0) {
+      if (delay > 0)
+      {
         printf("Waiting %d seconds\n", delay / 1000);
         kvs_wait(delay);
       }
@@ -161,17 +172,23 @@ static int run_job(int in_fd, int out_fd, char *filename) {
 
     case CMD_BACKUP:
       pthread_mutex_lock(&n_current_backups_lock);
-      if (active_backups >= max_backups) {
+      if (active_backups >= max_backups)
+      {
         wait(NULL);
-      } else {
+      }
+      else
+      {
         active_backups++;
       }
       pthread_mutex_unlock(&n_current_backups_lock);
       int aux = kvs_backup(++file_backups, filename, jobs_directory);
 
-      if (aux < 0) {
+      if (aux < 0)
+      {
         write_str(STDERR_FILENO, "Failed to do backup\n");
-      } else if (aux == 1) {
+      }
+      else if (aux == 1)
+      {
         return 1;
       }
       break;
@@ -204,30 +221,36 @@ static int run_job(int in_fd, int out_fd, char *filename) {
 }
 
 // frees arguments
-static void *get_file(void *arguments) {
+static void *get_file(void *arguments)
+{
   struct SharedData *thread_data = (struct SharedData *)arguments;
   DIR *dir = thread_data->dir;
   char *dir_name = thread_data->dir_name;
 
-  if (pthread_mutex_lock(&thread_data->directory_mutex) != 0) {
+  if (pthread_mutex_lock(&thread_data->directory_mutex) != 0)
+  {
     fprintf(stderr, "Thread failed to lock directory_mutex\n");
     return NULL;
   }
 
   struct dirent *entry;
   char in_path[MAX_JOB_FILE_NAME_SIZE], out_path[MAX_JOB_FILE_NAME_SIZE];
-  while ((entry = readdir(dir)) != NULL) {
-    if (entry_files(dir_name, entry, in_path, out_path)) {
+  while ((entry = readdir(dir)) != NULL)
+  {
+    if (entry_files(dir_name, entry, in_path, out_path))
+    {
       continue;
     }
 
-    if (pthread_mutex_unlock(&thread_data->directory_mutex) != 0) {
+    if (pthread_mutex_unlock(&thread_data->directory_mutex) != 0)
+    {
       fprintf(stderr, "Thread failed to unlock directory_mutex\n");
       return NULL;
     }
 
     int in_fd = open(in_path, O_RDONLY);
-    if (in_fd == -1) {
+    if (in_fd == -1)
+    {
       write_str(STDERR_FILENO, "Failed to open input file: ");
       write_str(STDERR_FILENO, in_path);
       write_str(STDERR_FILENO, "\n");
@@ -235,7 +258,8 @@ static void *get_file(void *arguments) {
     }
 
     int out_fd = open(out_path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
-    if (out_fd == -1) {
+    if (out_fd == -1)
+    {
       write_str(STDERR_FILENO, "Failed to open output file: ");
       write_str(STDERR_FILENO, out_path);
       write_str(STDERR_FILENO, "\n");
@@ -247,8 +271,10 @@ static void *get_file(void *arguments) {
     close(in_fd);
     close(out_fd);
 
-    if (out) {
-      if (closedir(dir) == -1) {
+    if (out)
+    {
+      if (closedir(dir) == -1)
+      {
         fprintf(stderr, "Failed to close directory\n");
         return 0;
       }
@@ -256,13 +282,15 @@ static void *get_file(void *arguments) {
       exit(0);
     }
 
-    if (pthread_mutex_lock(&thread_data->directory_mutex) != 0) {
+    if (pthread_mutex_lock(&thread_data->directory_mutex) != 0)
+    {
       fprintf(stderr, "Thread failed to lock directory_mutex\n");
       return NULL;
     }
   }
 
-  if (pthread_mutex_unlock(&thread_data->directory_mutex) != 0) {
+  if (pthread_mutex_unlock(&thread_data->directory_mutex) != 0)
+  {
     fprintf(stderr, "Thread failed to unlock directory_mutex\n");
     return NULL;
   }
@@ -270,182 +298,12 @@ static void *get_file(void *arguments) {
   pthread_exit(NULL);
 }
 
-
-void *main_FIFO() {
-
-  // Remove o pipe, se existir
-  if (unlink(register_FIFO_name) != 0 && errno != ENOENT) {
-    perror("unlink failed");
-    pthread_exit(NULL); // Exit thread instead of the whole process
-  }
-  
-  fprintf(stderr,"VAI CRIAR REGISTER FIFO\n");
-  fflush(stderr);
-  // Cria o pipe
-  if (mkfifo(register_FIFO_name, 0777) != 0) {
-    perror("mkfifo failed");
-    pthread_exit(NULL);
-  }
-  fprintf(stderr,"CRIOU REGISTER FIFO: %s\n",register_FIFO_name);
-
-  int fifo_fd = open(register_FIFO_name, O_RDONLY);
-  if (fifo_fd == -1) {
-    perror("Failed to open FIFO");
-    pthread_exit(NULL);
-  }
-
-  fprintf(stderr,"ABRIU REGISTER FIFO: fd%d\n",fifo_fd);
-
-
-
-
-  while (1) {
-    sem_wait(&SEM_BUFFER_SPACE);
-
-    ssize_t bytes_read = read(fifo_fd, BUFFER[BUFFER_WR_IND], 1 + 3 * MAX_PIPE_PATH_LENGTH);
-    if (bytes_read == 0) {
-      // EOF - Break the loop for cleanup
-      fprintf(stderr, "pipe closed\n");
-      break;
-    } else if (bytes_read == -1) {
-      fprintf(stderr, "read failed: %s\n", strerror(errno));
-      break; // Exit the loop on read failure
-    }
-
-    // Update write index and signal clients
-    BUFFER_WR_IND = (BUFFER_WR_IND + 1) % MAX_SESSION_COUNT;
-    sem_post(&SEM_BUFFER_CLIENTS);
-  }
-
-
-
-
-  // Cleanup resources
-
-  close(fifo_fd);
-  unlink(register_FIFO_name);
-  pthread_exit(NULL); // Ensure proper thread exit
-}
-
-void *thread_manage_session() {
-
-  char client_paths[1 + 3 * MAX_PIPE_PATH_LENGTH];
-  int x=1;
-  while (x)   {
-    sem_wait(&SEM_BUFFER_CLIENTS);
-    pthread_mutex_lock(&BUFFER_MUTEX);
-    
-    // Lê do buffer global
-    // Lock necessário, visto que todas as threads gestoras podem alterar o índice
-    strncpy(client_paths, BUFFER[BUFFER_RD_IND], (1 + 3 * MAX_PIPE_PATH_LENGTH));
-
-    BUFFER_RD_IND = (BUFFER_RD_IND + 1) % MAX_SESSION_COUNT;
-    pthread_mutex_unlock(&BUFFER_MUTEX);
-    sem_post(&SEM_BUFFER_SPACE);
-
-    // OP_CODE=1 | nome do pipe do cliente (para pedidos) | nome do pipe do cliente (para respostas) | nome do pipe do cliente (para notificações)
-    int op_code_1;
-    char req_pipe_path[MAX_PIPE_PATH_LENGTH];
-    char resp_pipe_path[MAX_PIPE_PATH_LENGTH];
-    char notif_pipe_path[MAX_PIPE_PATH_LENGTH];
-    
-    sscanf(client_paths, "%d%s%s%s", &op_code_1, req_pipe_path, resp_pipe_path, notif_pipe_path);
-    
-    // Abrir os pipes pela ordem que abre no cliente com a flag contrária
-    int resp_fd = open(resp_pipe_path, O_WRONLY);
-    if (resp_fd == -1) {
-      perror("Failed to open response FIFO");
-      exit(EXIT_FAILURE);
-    }
-    int req_fd = open(req_pipe_path, O_RDONLY);
-    if (req_fd == -1) {
-      perror("Failed to open request FIFO");
-      exit(EXIT_FAILURE);
-    }
-    int notif_fd = open(notif_pipe_path, O_WRONLY);
-    if (notif_fd == -1) {
-      perror("Failed to open notification FIFO");
-      exit(EXIT_FAILURE);
-    }
-
-    fprintf(stderr,"CHEGA AQUI NO SERVER\n");
-
-    send_msg(resp_fd, "10");
-
-    char request[42] = {0};
-    while (1) {
-      // Ler do pipe de pedidos
-      ssize_t bytes_read = read(req_fd, request, sizeof(request));
-      if (bytes_read == 0) {
-        // bytes_read == 0 indica EOF
-        fprintf(stderr, "Pipe closed\n");
-        break; // Handle client disconnection (e.g., unsubscribe)
-      } else if (bytes_read == -1) {
-        // bytes_read == -1 indica erro
-        fprintf(stderr, "Read failed: %s\n", strerror(errno));
-        exit(EXIT_FAILURE); // FIXME should return instead of exit?
-      }
-    
-      // Parse request
-      char op_code = request[0];
-      char key[41];
-
-      char response[2];
-      response[0] = op_code;
-
-      int result;
-
-      switch (op_code) {
-        case 2: // Disconnect (OP_CODE=2)
-          // Unsubscribe the client
-          // Unsubscribe the client from all keys (or the specific one)
-          // Modify this part as per the actual implementation logic
-          result = kvs_unsubscribe(key, notif_fd); // You can pass the key for unsubscribing
-          response[1] = (char)(result + '0'); // '0' or '1' based on success/failure
-          send_msg(notif_fd, response);
-          break;
-
-        case 3: // Subscribe (OP_CODE=3)
-          // OP_CODE=3 | key
-          strncpy(key, request + 1, 41);
-          result = kvs_subscribe(key, notif_fd);
-          response[1] = (char)(result + '0'); // '0' or '1' based on success/failure
-          send_msg(notif_fd, response);
-          break;
-
-        case 4: // Unsubscribe (OP_CODE=4)
-          // OP_CODE=4 | key
-          strncpy(key, request + 1, 41);
-          result = kvs_unsubscribe(key, notif_fd);
-          response[1] = (char)(result + '0'); // '0' or '1' based on success/failure
-          send_msg(notif_fd, response);
-          break;
-
-        default:
-          fprintf(stderr, "Invalid command, op_code unrecognized\n");
-          break;
-      }
-
-      // Exit the inner loop if the client disconnects
-      if (op_code == 2) {
-        break;
-      }
-    }
-
-    close(resp_fd);
-    close(req_fd);
-    close(notif_fd);
-  }
-}
-
-
-
-
-
-static void dispatch_threads(DIR *dir) {
+static void dispatch_threads(DIR *dir)
+{
   pthread_t *threads = malloc(max_threads * sizeof(pthread_t));
 
-  if (threads == NULL) {
+  if (threads == NULL)
+  {
     fprintf(stderr, "Failed to allocate memory for threads\n");
     return;
   }
@@ -453,9 +311,11 @@ static void dispatch_threads(DIR *dir) {
   struct SharedData thread_data = {dir, jobs_directory,
                                    PTHREAD_MUTEX_INITIALIZER};
 
-  for (size_t i = 0; i < max_threads; i++) {
+  for (size_t i = 0; i < max_threads; i++)
+  {
     if (pthread_create(&threads[i], NULL, get_file, (void *)&thread_data) !=
-        0) {
+        0)
+    {
       fprintf(stderr, "Failed to create thread %zu\n", i);
       pthread_mutex_destroy(&thread_data.directory_mutex);
       free(threads);
@@ -465,26 +325,10 @@ static void dispatch_threads(DIR *dir) {
 
   // ler do FIFO de registo
 
-  pthread_t FIFO_register_thread;
-  pthread_mutex_init(&BUFFER_MUTEX, NULL);
-// Start the FIFO register thread
-  pthread_create(&FIFO_register_thread, NULL, main_FIFO, NULL);
-
-  // Wait for the FIFO_register_thread to finish before continuing
-  pthread_join(FIFO_register_thread, NULL);
-  fprintf(stderr, "FIFO register thread finished successfully\n");
-
-
-  sem_init(&SEM_BUFFER_SPACE, 0, MAX_SESSION_COUNT);
-  sem_init(&SEM_BUFFER_CLIENTS, 0, 0);
-  pthread_t manager_threads[MAX_SESSION_COUNT];
-  for (int i = 0; i < MAX_SESSION_COUNT; i++) {
-    pthread_create(&manager_threads[i], NULL, thread_manage_session, &thread_data);
-  }
-
-
-  for (unsigned int i = 0; i < max_threads; i++) {
-    if (pthread_join(threads[i], NULL) != 0) {
+  for (unsigned int i = 0; i < max_threads; i++)
+  {
+    if (pthread_join(threads[i], NULL) != 0)
+    {
       fprintf(stderr, "Failed to join thread %u\n", i);
       pthread_mutex_destroy(&thread_data.directory_mutex);
       free(threads);
@@ -492,24 +336,181 @@ static void dispatch_threads(DIR *dir) {
     }
   }
 
-  if (pthread_mutex_destroy(&thread_data.directory_mutex) != 0) {
-    fprintf(stderr, "Failed to destroy directory_mutex\n");
-  }
-
-  //  if (sem_destroy(&SEM_BUFFER_SPACE) != 0) {
-  //       perror("Failed to destroy SEM_BUFFER_SPACE");
-  //   }
-
-  //   if (sem_destroy(&SEM_BUFFER_CLIENTS) != 0) {
-  //       perror("Failed to destroy SEM_BUFFER_CLIENTS");
-  //   }
-
-
   free(threads);
 }
 
-int main(int argc, char **argv) {
-  if (argc < 5) {
+void createsRegisterFIFO()
+{
+  if (strlen(register_FIFO_name) == 0)
+  {
+    write_str(STDERR_FILENO, "Invalid or empty FIFO name\n");
+  }
+
+  // Remove o pipe, se existir
+  if (unlink(register_FIFO_name) != 0 && errno != ENOENT)
+  {
+    perror("unlink failed");
+    pthread_exit(NULL); // Exit thread instead of the whole process
+  }
+  if (mkfifo(register_FIFO_name, 0777) != 0)
+  {
+    perror("mkfifo failed");
+    pthread_exit(NULL);
+  }
+}
+
+void *verify_requests()
+{
+  char buf[MAX_PIPE_BUFFER_SIZE];
+  char key[MAX_PIPE_PATH_LENGTH + 1];
+  int req_pipe_fd = open(req_pipe_path, O_RDONLY);
+  if (req_pipe_fd == -1)
+  {
+    perror("Verify_requests: Failed to open request pipe");
+    return NULL;
+  }
+  fprintf(stderr, "Verify_requests: Waiting for requests.\n");
+  int resp_pipe_fd = -1;
+
+  while (1)
+  {
+    // printf("HELLO\n");
+
+    ssize_t bytes_read = read(req_pipe_fd, buf, sizeof(buf));
+    if (bytes_read > 0)
+    {
+      buf[bytes_read] = '\0'; // Null-terminate for safe string operations
+      fprintf(stderr, "Verify_requests: Read request from pipe: %s\n", buf);
+      switch (buf[0])
+      {
+      case '2':
+        fprintf(stderr, "Verify_requests: Disconnect request received.\n");
+
+        resp_pipe_fd = open(resp_pipe_path, O_WRONLY);
+        write(resp_pipe_fd, "20", 2);
+        close(resp_pipe_fd);
+        fprintf(stderr, "Verify_requests: Disconnect response sent.\n");
+
+        break;
+
+      case '3':
+        strcpy(key, buf + 1);
+        fprintf(stderr, "Verify_requests: Subscribe request received for key: %s\n", key);
+        int subscribe_result = kvs_subscribe(notif_pipe_path, key); // kvs_subscribe should return 1 on success, 0 on failure
+        resp_pipe_fd = open(resp_pipe_path, O_WRONLY);
+        if (resp_pipe_fd == -1)
+        {
+          perror("Verify_requests: Failed to open response pipe for writing");
+        }
+        else
+        {
+          const char *response_code = (subscribe_result == 1) ? "30" : "31";
+          ssize_t bytes_written = write(resp_pipe_fd, response_code, 2);
+          if (bytes_written < 2)
+          {
+            perror("Verify_requests: Failed to write subscribe response to response pipe");
+          }
+          else
+          {
+            fprintf(stderr, "Verify_requests: Subscribe response successfully sent for key: %s\n", key);
+            if (subscribe_result)
+            {
+              fprintf(stderr, "Verify_requests: Subscription Successfull\n");
+            }
+            else
+            {
+              fprintf(stderr, "Verify_requests: Subscription Failed\n");
+            }
+          }
+          close(resp_pipe_fd);
+        }
+
+        break;
+
+      case '4':
+        strcpy(key, buf + 1);
+        fprintf(stderr, "Verify_requests: Unsubscribe request received for key: %s\n", key);
+        int unsubscribe_result = kvs_unsubscribe(notif_pipe_path, key); // kvs_unsubscribe should return 1 on success, 0 on failure
+        resp_pipe_fd = open(resp_pipe_path, O_WRONLY);
+        if (resp_pipe_fd == -1)
+        {
+          perror("Verify_requests: Failed to open response pipe for writing");
+        }
+        else
+        {
+          const char *response_code = (unsubscribe_result == 1) ? "40" : "41"; // "40" for success, "41" for failure
+          ssize_t bytes_written = write(resp_pipe_fd, response_code, 2);
+          if (bytes_written < 2)
+          {
+            perror("Verify_requests: Failed to write unsubscribe response to response pipe");
+          }
+          else
+          {
+            fprintf(stderr, "Verify_requests: Unsubscribe response successfully sent for key: %s\n", key);
+            if (unsubscribe_result)
+            {
+              fprintf(stderr, "Verify_requests: Unsubscription Successful\n");
+            }
+            else
+            {
+              fprintf(stderr, "Verify_requests: Unsubscription Failed\n");
+            }
+          }
+          close(resp_pipe_fd);
+        }
+
+        break;
+
+      default:
+        break; // TODO erro dps fazer isto
+      }
+    }
+  }
+}
+
+void *verify_server_pipe()
+{
+  char buf[MAX_PIPE_BUFFER_SIZE];
+  int resp_pipe_fd;
+  int req_pipe_fd;
+  server_pipe_fd = open(register_FIFO_name, O_RDONLY);
+
+  while (1)
+  {
+    read(server_pipe_fd, buf, sizeof(buf));
+    if (buf[0] == '1')
+    {
+      memcpy(req_pipe_path, buf + 1, MAX_PIPE_PATH_LENGTH);
+      // printf("req_pipe_path: %s\n", req_pipe_path); // Print to verify
+
+      memcpy(resp_pipe_path, buf + 1 + MAX_PIPE_PATH_LENGTH, MAX_PIPE_PATH_LENGTH);
+      // printf("resp_pipe_path: %s\n", resp_pipe_path); // Print to verify
+
+      memcpy(notif_pipe_path, buf + 1 + 2 * MAX_PIPE_PATH_LENGTH, MAX_PIPE_PATH_LENGTH);
+      // printf("notif_pipe_path: %s\n", notif_pipe_path); // Print to verify
+
+      resp_pipe_fd = open(resp_pipe_path, O_WRONLY);
+      write(resp_pipe_fd, "0", 1);
+
+      req_pipe_fd = open(req_pipe_path, O_RDONLY);
+      pthread_t thread_request_pipe;
+      pthread_create(&thread_request_pipe, NULL, verify_requests, NULL);
+      pthread_detach(thread_request_pipe);
+    }
+    else
+    {
+      strncpy(resp_pipe_path, buf + 1 + MAX_PIPE_PATH_LENGTH, MAX_PIPE_PATH_LENGTH);
+      resp_pipe_fd = open(resp_pipe_path, O_WRONLY);
+      write(resp_pipe_fd, "1", 1);
+    }
+    close(resp_pipe_fd);
+  }
+}
+
+int main(int argc, char **argv)
+{
+  if (argc < 5)
+  {
     write_str(STDERR_FILENO, "Usage: ");
     write_str(STDERR_FILENO, argv[0]);
     write_str(STDERR_FILENO, " <jobs_dir>");
@@ -524,60 +525,71 @@ int main(int argc, char **argv) {
   char *endptr;
   max_backups = strtoul(argv[3], &endptr, 10);
 
-  if (*endptr != '\0') {
+  if (*endptr != '\0')
+  {
     fprintf(stderr, "Invalid max_proc value\n");
     return 1;
   }
 
   max_threads = strtoul(argv[2], &endptr, 10);
- 
 
-  if (*endptr != '\0') {
+  if (*endptr != '\0')
+  {
     fprintf(stderr, "Invalid max_threads value\n");
     return 1;
   }
 
-  if (max_backups <= 0) {
+  if (max_backups <= 0)
+  {
     write_str(STDERR_FILENO, "Invalid number of backups\n");
     return 0;
   }
 
-  if (max_threads <= 0) {
+  if (max_threads <= 0)
+  {
     write_str(STDERR_FILENO, "Invalid number of threads\n");
     return 0;
   }
-  
-  register_FIFO_name = argv[4];
+  strcpy(register_FIFO_name, "/tmp/server");
+  strcat(register_FIFO_name, argv[4]);
+
   fprintf(stderr, "FIFO name: %s\n", register_FIFO_name);
+  createsRegisterFIFO();
+  fprintf(stderr, "CRIOU REGISTER FIFO: %s\n", register_FIFO_name);
 
-  if (register_FIFO_name == NULL || strlen(register_FIFO_name) == 0) {
-    write_str(STDERR_FILENO, "Invalid or empty FIFO name\n");
-    return 1;
-}
+  pthread_t thread_server_pipe;
+  pthread_create(&thread_server_pipe, NULL, verify_server_pipe, NULL);
 
-  if (kvs_init()) {
+  if (kvs_init())
+  {
     write_str(STDERR_FILENO, "Failed to initialize KVS\n");
     return 1;
   }
 
   DIR *dir = opendir(argv[1]);
-  if (dir == NULL) {
+  if (dir == NULL)
+  {
     fprintf(stderr, "Failed to open directory: %s\n", argv[1]);
     return 0;
   }
 
   dispatch_threads(dir);
 
-  if (closedir(dir) == -1) {
+  if (closedir(dir) == -1)
+  {
     fprintf(stderr, "Failed to close directory\n");
     return 0;
   }
 
-  while (active_backups > 0) {
+  while (active_backups > 0)
+  {
     wait(NULL);
     active_backups--;
   }
 
+  pthread_detach(thread_server_pipe);
+
+  unlink(register_FIFO_name);
   kvs_terminate();
 
   return 0;

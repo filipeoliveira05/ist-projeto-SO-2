@@ -6,15 +6,23 @@
 #include <stddef.h>
 #include "src/common/constants.h"
 
-typedef struct KeyNode {
-    char *key;
-    char *value;
-    int subscriber_fds[MAX_SESSION_COUNT];
-    struct KeyNode *next;
+typedef struct Client
+{
+  struct Client *next;
+  char notif_pipe_path[MAX_PIPE_PATH_LENGTH + 1];
+} Client;
+
+typedef struct KeyNode
+{
+  char *key;
+  char *value;
+  struct KeyNode *next;
+  struct Client *Head;
+  int n_clients;
 } KeyNode;
 
-
-typedef struct HashTable {
+typedef struct HashTable
+{
   KeyNode *table[TABLE_SIZE];
   pthread_rwlock_t tablelock;
 } HashTable;
@@ -38,6 +46,8 @@ int write_pair(HashTable *ht, const char *key, const char *value);
 // return the value if found, NULL otherwise.
 char *read_pair(HashTable *ht, const char *key);
 
+KeyNode *find_key(HashTable *ht, const char *key);
+
 /// Deletes a pair from the table.
 /// @param ht Hash table to read from.
 /// @param key Key of the pair to be deleted.
@@ -47,9 +57,5 @@ int delete_pair(HashTable *ht, const char *key);
 /// Frees the hashtable.
 /// @param ht Hash table to be deleted.
 void free_table(HashTable *ht);
-
-int add_subscriber(HashTable *ht, const char *key, int subscriber_fd);  // Add a subscriber
-int remove_subscriber(HashTable *ht, const char *key, int subscriber_fd);  // Remove a subscriber
-
 
 #endif // KVS_H

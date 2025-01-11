@@ -17,12 +17,15 @@ static struct HashTable *kvs_table = NULL;
 /// Calculates a timespec from a delay in milliseconds.
 /// @param delay_ms Delay in milliseconds.
 /// @return Timespec with the given delay.
-static struct timespec delay_to_timespec(unsigned int delay_ms) {
+static struct timespec delay_to_timespec(unsigned int delay_ms)
+{
   return (struct timespec){delay_ms / 1000, (delay_ms % 1000) * 1000000};
 }
 
-int kvs_init() {
-  if (kvs_table != NULL) {
+int kvs_init()
+{
+  if (kvs_table != NULL)
+  {
     fprintf(stderr, "KVS state has already been initialized\n");
     return 1;
   }
@@ -31,8 +34,10 @@ int kvs_init() {
   return kvs_table == NULL;
 }
 
-int kvs_terminate() {
-  if (kvs_table == NULL) {
+int kvs_terminate()
+{
+  if (kvs_table == NULL)
+  {
     fprintf(stderr, "KVS state must be initialized\n");
     return 1;
   }
@@ -43,16 +48,20 @@ int kvs_terminate() {
 }
 
 int kvs_write(size_t num_pairs, char keys[][MAX_STRING_SIZE],
-              char values[][MAX_STRING_SIZE]) {
-  if (kvs_table == NULL) {
+              char values[][MAX_STRING_SIZE])
+{
+  if (kvs_table == NULL)
+  {
     fprintf(stderr, "KVS state must be initialized\n");
     return 1;
   }
 
   pthread_rwlock_wrlock(&kvs_table->tablelock);
 
-  for (size_t i = 0; i < num_pairs; i++) {
-    if (write_pair(kvs_table, keys[i], values[i]) != 0) {
+  for (size_t i = 0; i < num_pairs; i++)
+  {
+    if (write_pair(kvs_table, keys[i], values[i]) != 0)
+    {
       fprintf(stderr, "Failed to write key pair (%s,%s)\n", keys[i], values[i]);
     }
   }
@@ -61,8 +70,10 @@ int kvs_write(size_t num_pairs, char keys[][MAX_STRING_SIZE],
   return 0;
 }
 
-int kvs_read(size_t num_pairs, char keys[][MAX_STRING_SIZE], int fd) {
-  if (kvs_table == NULL) {
+int kvs_read(size_t num_pairs, char keys[][MAX_STRING_SIZE], int fd)
+{
+  if (kvs_table == NULL)
+  {
     fprintf(stderr, "KVS state must be initialized\n");
     return 1;
   }
@@ -70,12 +81,16 @@ int kvs_read(size_t num_pairs, char keys[][MAX_STRING_SIZE], int fd) {
   pthread_rwlock_rdlock(&kvs_table->tablelock);
 
   write_str(fd, "[");
-  for (size_t i = 0; i < num_pairs; i++) {
+  for (size_t i = 0; i < num_pairs; i++)
+  {
     char *result = read_pair(kvs_table, keys[i]);
     char aux[MAX_STRING_SIZE];
-    if (result == NULL) {
+    if (result == NULL)
+    {
       snprintf(aux, MAX_STRING_SIZE, "(%s,KVSERROR)", keys[i]);
-    } else {
+    }
+    else
+    {
       snprintf(aux, MAX_STRING_SIZE, "(%s,%s)", keys[i], result);
     }
     write_str(fd, aux);
@@ -87,8 +102,10 @@ int kvs_read(size_t num_pairs, char keys[][MAX_STRING_SIZE], int fd) {
   return 0;
 }
 
-int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE], int fd) {
-  if (kvs_table == NULL) {
+int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE], int fd)
+{
+  if (kvs_table == NULL)
+  {
     fprintf(stderr, "KVS state must be initialized\n");
     return 1;
   }
@@ -96,9 +113,12 @@ int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE], int fd) {
   pthread_rwlock_wrlock(&kvs_table->tablelock);
 
   int aux = 0;
-  for (size_t i = 0; i < num_pairs; i++) {
-    if (delete_pair(kvs_table, keys[i]) != 0) {
-      if (!aux) {
+  for (size_t i = 0; i < num_pairs; i++)
+  {
+    if (delete_pair(kvs_table, keys[i]) != 0)
+    {
+      if (!aux)
+      {
         write_str(fd, "[");
         aux = 1;
       }
@@ -107,7 +127,8 @@ int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE], int fd) {
       write_str(fd, str);
     }
   }
-  if (aux) {
+  if (aux)
+  {
     write_str(fd, "]\n");
   }
 
@@ -115,8 +136,10 @@ int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE], int fd) {
   return 0;
 }
 
-void kvs_show(int fd) {
-  if (kvs_table == NULL) {
+void kvs_show(int fd)
+{
+  if (kvs_table == NULL)
+  {
     fprintf(stderr, "KVS state must be initialized\n");
     return;
   }
@@ -124,9 +147,11 @@ void kvs_show(int fd) {
   pthread_rwlock_rdlock(&kvs_table->tablelock);
   char aux[MAX_STRING_SIZE];
 
-  for (int i = 0; i < TABLE_SIZE; i++) {
+  for (int i = 0; i < TABLE_SIZE; i++)
+  {
     KeyNode *keyNode = kvs_table->table[i]; // Get the next list head
-    while (keyNode != NULL) {
+    while (keyNode != NULL)
+    {
       snprintf(aux, MAX_STRING_SIZE, "(%s, %s)\n", keyNode->key,
                keyNode->value);
       write_str(fd, aux);
@@ -137,7 +162,8 @@ void kvs_show(int fd) {
   pthread_rwlock_unlock(&kvs_table->tablelock);
 }
 
-int kvs_backup(size_t num_backup, char *job_filename, char *directory) {
+int kvs_backup(size_t num_backup, char *job_filename, char *directory)
+{
   pid_t pid;
   char bck_name[50];
   snprintf(bck_name, sizeof(bck_name), "%s/%s-%ld.bck", directory,
@@ -146,13 +172,16 @@ int kvs_backup(size_t num_backup, char *job_filename, char *directory) {
   pthread_rwlock_rdlock(&kvs_table->tablelock);
   pid = fork();
   pthread_rwlock_unlock(&kvs_table->tablelock);
-  if (pid == 0) {
+  if (pid == 0)
+  {
     // functions used here have to be async signal safe, since this
     // fork happens in a multi thread context (see man fork)
     int fd = open(bck_name, O_WRONLY | O_CREAT | O_TRUNC, 0666);
-    for (int i = 0; i < TABLE_SIZE; i++) {
+    for (int i = 0; i < TABLE_SIZE; i++)
+    {
       KeyNode *keyNode = kvs_table->table[i]; // Get the next list head
-      while (keyNode != NULL) {
+      while (keyNode != NULL)
+      {
         char aux[MAX_STRING_SIZE];
         aux[0] = '(';
         size_t num_bytes_copied = 1; // the "("
@@ -171,48 +200,85 @@ int kvs_backup(size_t num_backup, char *job_filename, char *directory) {
       }
     }
     exit(1);
-  } else if (pid < 0) {
+  }
+  else if (pid < 0)
+  {
     return -1;
   }
   return 0;
 }
 
-void kvs_wait(unsigned int delay_ms) {
+void kvs_wait(unsigned int delay_ms)
+{
   struct timespec delay = delay_to_timespec(delay_ms);
   nanosleep(&delay, NULL);
 }
 
-int kvs_subscribe(const char *key, int fd) {
-  if (kvs_table == NULL) {
-    fprintf(stderr, "KVS state must be initialized\n");
-    return 1;
+int kvs_subscribe(char notif_path[MAX_PIPE_PATH_LENGTH], char key[MAX_STRING_SIZE])
+{
+  KeyNode *key_node = find_key(kvs_table, key);
+  if (key_node != NULL)
+  {
+    Client *client = key_node->Head;
+    Client *client_new = malloc(sizeof(Client));
+
+    client_new->next = NULL;
+    strcpy(client_new->notif_pipe_path, notif_path);
+
+    if (client != NULL)
+    {
+      while (client->next != NULL)
+      {
+        client = client->next;
+      }
+      client->next = client_new;
+    }
+    else
+      key_node->Head = client_new;
+
+    key_node->n_clients++;
   }
-
-
-  // Acquire write lock for the KVS table
-  pthread_rwlock_wrlock(&kvs_table->tablelock);
-
-  int result = add_subscriber(kvs_table, key, fd);
-
-  // Release the lock
-  pthread_rwlock_unlock(&kvs_table->tablelock);
-
-  return result;
+  else
+  {
+    return 0;
+  }
+  return 1;
 }
+int kvs_unsubscribe(char notif_path[MAX_PIPE_PATH_LENGTH], char key[MAX_STRING_SIZE])
+{
+  KeyNode *key_node = find_key(kvs_table, key);
 
-int kvs_unsubscribe(const char *key, int fd) {
-  if (kvs_table == NULL) {
-    fprintf(stderr, "KVS state must be initialized\n");
-    return 1;
+  // If the key does not exist in the key-value store
+  if (key_node == NULL)
+  {
+    return 0; // Failure: Key not found
   }
 
-  // Acquire write lock for the KVS table
-  pthread_rwlock_wrlock(&kvs_table->tablelock);
+  Client *client = key_node->Head;
+  Client *client_pre = NULL;
 
-  int result = remove_subscriber(kvs_table, key, fd);
+  // Traverse the linked list of clients for the given key
+  while (client != NULL)
+  {
+    if (strcmp(client->notif_pipe_path, notif_path) == 0)
+    {
+      // Remove the client from the list
+      if (client_pre == NULL)
+      {
+        key_node->Head = client->next;
+      }
+      else
+      {
+        client_pre->next = client->next;
+      }
 
-  // Release the lock
-  pthread_rwlock_unlock(&kvs_table->tablelock);
+      free(client);
+      key_node->n_clients--;
+      return 1; // Success: Unsubscription successful
+    }
 
-  return result;
+    client_pre = client;
+    client = client->next;
+  }
+  return 0; // Failure: Client not found
 }
