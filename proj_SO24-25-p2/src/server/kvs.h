@@ -4,12 +4,15 @@
 
 #include <pthread.h>
 #include <stddef.h>
+#include "src/common/constants.h"
 
 typedef struct KeyNode {
-  char *key;
-  char *value;
-  struct KeyNode *next;
+    char *key;
+    char *value;
+    int subscriber_fds[MAX_SESSION_COUNT];
+    struct KeyNode *next;
 } KeyNode;
+
 
 typedef struct HashTable {
   KeyNode *table[TABLE_SIZE];
@@ -44,5 +47,9 @@ int delete_pair(HashTable *ht, const char *key);
 /// Frees the hashtable.
 /// @param ht Hash table to be deleted.
 void free_table(HashTable *ht);
+
+int add_subscriber(HashTable *ht, const char *key, int subscriber_fd);  // Add a subscriber
+int remove_subscriber(HashTable *ht, const char *key, int subscriber_fd);  // Remove a subscriber
+
 
 #endif // KVS_H

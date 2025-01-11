@@ -37,11 +37,13 @@ int main(int argc, char *argv[]) {
   strncat(resp_pipe_path, argv[1], strlen(argv[1]) * sizeof(char));
   strncat(notif_pipe_path, argv[1], strlen(argv[1]) * sizeof(char));
 
+  fprintf(stderr, "Conecting...\n");
   // TODO open pipes
   if (kvs_connect(req_pipe_path, resp_pipe_path,register_pipe_path, notif_pipe_path, &notif_pipe_fd) != 0) {
     fprintf(stderr, "Failed to connect to the server\n");
     return 1;
   }
+  fprintf(stderr, "Conected Successfully\n");
 
 
   while (1) {
@@ -52,7 +54,7 @@ int main(int argc, char *argv[]) {
         return 1;
       }
       // TODO: end notifications thread
-      printf("Disconnected from server\n");
+     fprintf(stderr,"Disconnected from server\n");
       return 0;
 
     case CMD_SUBSCRIBE:
@@ -88,7 +90,7 @@ int main(int argc, char *argv[]) {
       }
 
       if (delay_ms > 0) {
-        printf("Waiting...\n");
+        fprintf(stderr,"Waiting...\n");
         delay(delay_ms);
       }
       break;

@@ -1,4 +1,5 @@
 #include <dirent.h>
+#include <semaphore.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <stdio.h>
@@ -8,7 +9,6 @@
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <semaphore.h>
 #include <errno.h>
 
 
@@ -20,11 +20,7 @@
 #include "parser.h"
 #include "pthread.h"
 
-struct SharedData {
-  DIR *dir;
-  char *dir_name;
-  pthread_mutex_t directory_mutex;
-};
+
 
 pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t n_current_backups_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -43,6 +39,28 @@ size_t max_backups;        // Maximum allowed simultaneous backups
 size_t max_threads;        // Maximum allowed simultaneous threads
 char *register_FIFO_name = NULL;
 char *jobs_directory = NULL;
+
+
+
+/**
+ * helper function to send messages
+ * retries to send whatever was not sent in the beginning
+ */
+void send_msg(int fd, char const *str) {
+    size_t len = strlen(str);
+    size_t written = 0;
+
+    while (written < len) {
+        ssize_t ret = write(fd, str + written, len - written);
+        if (ret < 0) {
+            perror("Write failed");
+            exit(EXIT_FAILURE);
+        }
+
+        written += (size_t)ret;
+    }
+}
+
 
 int filter_job_files(const struct dirent *entry) {
   const char *dot = strrchr(entry->d_name, '.');
@@ -260,18 +278,26 @@ void *main_FIFO() {
     perror("unlink failed");
     pthread_exit(NULL); // Exit thread instead of the whole process
   }
-
+  
+  fprintf(stderr,"VAI CRIAR REGISTER FIFO\n");
+  fflush(stderr);
   // Cria o pipe
-  if (mkfifo(register_FIFO_name, 0640) != 0) {
+  if (mkfifo(register_FIFO_name, 0777) != 0) {
     perror("mkfifo failed");
     pthread_exit(NULL);
   }
+  fprintf(stderr,"CRIOU REGISTER FIFO: %s\n",register_FIFO_name);
 
   int fifo_fd = open(register_FIFO_name, O_RDONLY);
   if (fifo_fd == -1) {
     perror("Failed to open FIFO");
     pthread_exit(NULL);
   }
+
+  fprintf(stderr,"ABRIU REGISTER FIFO: fd%d\n",fifo_fd);
+
+
+
 
   while (1) {
     sem_wait(&SEM_BUFFER_SPACE);
@@ -291,6 +317,9 @@ void *main_FIFO() {
     sem_post(&SEM_BUFFER_CLIENTS);
   }
 
+
+
+
   // Cleanup resources
 
   close(fifo_fd);
@@ -298,17 +327,16 @@ void *main_FIFO() {
   pthread_exit(NULL); // Ensure proper thread exit
 }
 
-
-void *thread_manage_session(void *arg) {
-  struct SharedData *data = (struct SharedData *)arg;
+void *thread_manage_session() {
 
   char client_paths[1 + 3 * MAX_PIPE_PATH_LENGTH];
-  while (1) {
+  int x=1;
+  while (x)   {
     sem_wait(&SEM_BUFFER_CLIENTS);
     pthread_mutex_lock(&BUFFER_MUTEX);
     
     // Lê do buffer global
-    // Lock necessário, visto que tas as threads gestoras podem alterar o indice
+    // Lock necessário, visto que todas as threads gestoras podem alterar o índice
     strncpy(client_paths, BUFFER[BUFFER_RD_IND], (1 + 3 * MAX_PIPE_PATH_LENGTH));
 
     BUFFER_RD_IND = (BUFFER_RD_IND + 1) % MAX_SESSION_COUNT;
@@ -323,40 +351,42 @@ void *thread_manage_session(void *arg) {
     
     sscanf(client_paths, "%d%s%s%s", &op_code_1, req_pipe_path, resp_pipe_path, notif_pipe_path);
     
-    // importante: abrir os pipes pela ordem que abres no cliente em api.c com a flag contrária
+    // Abrir os pipes pela ordem que abre no cliente com a flag contrária
     int resp_fd = open(resp_pipe_path, O_WRONLY);
-    if(resp_fd == -1) {
-      perror("Failed to open FIFO");
+    if (resp_fd == -1) {
+      perror("Failed to open response FIFO");
       exit(EXIT_FAILURE);
     }
     int req_fd = open(req_pipe_path, O_RDONLY);
-    if(req_fd == -1) {
-      perror("Failed to open FIFO");
+    if (req_fd == -1) {
+      perror("Failed to open request FIFO");
       exit(EXIT_FAILURE);
     }
     int notif_fd = open(notif_pipe_path, O_WRONLY);
-    if(notif_fd == -1) {
-      perror("Failed to open FIFO");
+    if (notif_fd == -1) {
+      perror("Failed to open notification FIFO");
       exit(EXIT_FAILURE);
     }
+
+    fprintf(stderr,"CHEGA AQUI NO SERVER\n");
 
     send_msg(resp_fd, "10");
 
     char request[42] = {0};
-    while(1) {
+    while (1) {
       // Ler do pipe de pedidos
       ssize_t bytes_read = read(req_fd, request, sizeof(request));
       if (bytes_read == 0) {
         // bytes_read == 0 indica EOF
-        fprintf(stderr, "pipe closed\n");
-        break; // FIXME is it supposed to return?
+        fprintf(stderr, "Pipe closed\n");
+        break; // Handle client disconnection (e.g., unsubscribe)
       } else if (bytes_read == -1) {
         // bytes_read == -1 indica erro
-        fprintf(stderr, "read failed: %s\n", strerror(errno));
-        exit(EXIT_FAILURE); // FIXME is it supposed to return?
+        fprintf(stderr, "Read failed: %s\n", strerror(errno));
+        exit(EXIT_FAILURE); // FIXME should return instead of exit?
       }
     
-      //parse request
+      // Parse request
       char op_code = request[0];
       char key[41];
 
@@ -366,33 +396,29 @@ void *thread_manage_session(void *arg) {
       int result;
 
       switch (op_code) {
-        case 2: //disconnect
-          // OP_CODE=2
-
-          //FIXME unsubscribe clients keys
-
-          //FIXME send message according to successeful operations
-          //response[1] = result+'0';
+        case 2: // Disconnect (OP_CODE=2)
+          // Unsubscribe the client
+          // Unsubscribe the client from all keys (or the specific one)
+          // Modify this part as per the actual implementation logic
+          result = kvs_unsubscribe(key, notif_fd); // You can pass the key for unsubscribing
+          response[1] = (char)(result + '0'); // '0' or '1' based on success/failure
           send_msg(notif_fd, response);
-
           break;
-          
-        case 3: //subscribe
+
+        case 3: // Subscribe (OP_CODE=3)
           // OP_CODE=3 | key
           strncpy(key, request + 1, 41);
-          result = kvs_subscribe(key, notif_fd, data);
-          response[1] = (char) result+'0';
+          result = kvs_subscribe(key, notif_fd);
+          response[1] = (char)(result + '0'); // '0' or '1' based on success/failure
           send_msg(notif_fd, response);
-
           break;
-          
-        case 4: //unsubscribe
+
+        case 4: // Unsubscribe (OP_CODE=4)
           // OP_CODE=4 | key
           strncpy(key, request + 1, 41);
-          result = kvs_unsubscribe(key, notif_fd, data);
-          response[1] = (char) result+'0';
+          result = kvs_unsubscribe(key, notif_fd);
+          response[1] = (char)(result + '0'); // '0' or '1' based on success/failure
           send_msg(notif_fd, response);
-
           break;
 
         default:
@@ -400,17 +426,18 @@ void *thread_manage_session(void *arg) {
           break;
       }
 
-      // exits inner while loop
+      // Exit the inner loop if the client disconnects
       if (op_code == 2) {
         break;
       }
-      
     }
+
     close(resp_fd);
     close(req_fd);
     close(notif_fd);
-  } 
+  }
 }
+
 
 
 
@@ -440,15 +467,20 @@ static void dispatch_threads(DIR *dir) {
 
   pthread_t FIFO_register_thread;
   pthread_mutex_init(&BUFFER_MUTEX, NULL);
+// Start the FIFO register thread
   pthread_create(&FIFO_register_thread, NULL, main_FIFO, NULL);
 
-  // sem_init(&SEM_BUFFER_SPACE, 0, MAX_SESSION_COUNT);
-  // sem_init(&SEM_BUFFER_CLIENTS, 0, 0);
-  // pthread_t manager_threads[MAX_SESSION_COUNT];
-  // for (int i = 0; i < MAX_SESSION_COUNT; i++) {
-  //   pthread_create(&manager_threads[i], NULL, thread_manager, &thread_data);
-  // }
+  // Wait for the FIFO_register_thread to finish before continuing
+  pthread_join(FIFO_register_thread, NULL);
+  fprintf(stderr, "FIFO register thread finished successfully\n");
 
+
+  sem_init(&SEM_BUFFER_SPACE, 0, MAX_SESSION_COUNT);
+  sem_init(&SEM_BUFFER_CLIENTS, 0, 0);
+  pthread_t manager_threads[MAX_SESSION_COUNT];
+  for (int i = 0; i < MAX_SESSION_COUNT; i++) {
+    pthread_create(&manager_threads[i], NULL, thread_manage_session, &thread_data);
+  }
 
 
   for (unsigned int i = 0; i < max_threads; i++) {
@@ -463,6 +495,15 @@ static void dispatch_threads(DIR *dir) {
   if (pthread_mutex_destroy(&thread_data.directory_mutex) != 0) {
     fprintf(stderr, "Failed to destroy directory_mutex\n");
   }
+
+  //  if (sem_destroy(&SEM_BUFFER_SPACE) != 0) {
+  //       perror("Failed to destroy SEM_BUFFER_SPACE");
+  //   }
+
+  //   if (sem_destroy(&SEM_BUFFER_CLIENTS) != 0) {
+  //       perror("Failed to destroy SEM_BUFFER_CLIENTS");
+  //   }
+
 
   free(threads);
 }
@@ -507,6 +548,8 @@ int main(int argc, char **argv) {
   }
   
   register_FIFO_name = argv[4];
+  fprintf(stderr, "FIFO name: %s\n", register_FIFO_name);
+
   if (register_FIFO_name == NULL || strlen(register_FIFO_name) == 0) {
     write_str(STDERR_FILENO, "Invalid or empty FIFO name\n");
     return 1;

@@ -2,8 +2,18 @@
 #define KVS_OPERATIONS_H
 
 #include <stddef.h>
+#include <dirent.h>
+#include "pthread.h"
+
 
 #include "constants.h"
+
+typedef struct SharedData {
+  DIR *dir;
+  char *dir_name;
+  pthread_mutex_t directory_mutex;
+}SharedData;
+
 
 /// Initializes the KVS state.
 /// @return 0 if the KVS state was initialized successfully, 1 otherwise.
@@ -61,5 +71,8 @@ void set_n_current_backups(int _n_current_backups);
 // Getter for n_current_backups
 // @return n_current_backups
 int get_n_current_backups();
+
+int kvs_subscribe(const char *key, int fd);
+int kvs_unsubscribe(const char *key, int fd);
 
 #endif // KVS_OPERATIONS_H

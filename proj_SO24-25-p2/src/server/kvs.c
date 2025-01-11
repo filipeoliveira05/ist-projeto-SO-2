@@ -122,3 +122,64 @@ void free_table(HashTable *ht) {
   pthread_rwlock_destroy(&ht->tablelock);
   free(ht);
 }
+int add_subscriber(HashTable *ht, const char *key, int subscriber_fd) {
+    int index = hash(key);
+    
+    // Lock the hash table for writing
+    pthread_rwlock_wrlock(&ht->tablelock);
+
+    KeyNode *keyNode = ht->table[index];
+    if (keyNode == NULL) {
+        // No key found, return error
+        pthread_rwlock_unlock(&ht->tablelock);
+        return 1; // Key does not exist
+    }
+
+    // Check if the subscriber already exists in the key node
+    for (int i = 0; i < MAX_SESSION_COUNT; i++) {
+        if (keyNode->subscriber_fds[i] == subscriber_fd) {
+            pthread_rwlock_unlock(&ht->tablelock);
+            return 1; // Subscriber already exists
+        }
+    }
+
+    // Find an empty slot for the new subscriber
+    for (int i = 0; i < MAX_SESSION_COUNT; i++) {
+        if (keyNode->subscriber_fds[i] == -1) {
+            keyNode->subscriber_fds[i] = subscriber_fd;
+            pthread_rwlock_unlock(&ht->tablelock);
+            return 0; // Subscriber added
+        }
+    }
+
+    // No space for new subscriber
+    pthread_rwlock_unlock(&ht->tablelock);
+    return 1; // No space for new subscriber
+}
+
+int remove_subscriber(HashTable *ht, const char *key, int subscriber_fd) {
+    int index = hash(key);
+    
+    // Lock the hash table for writing
+    pthread_rwlock_wrlock(&ht->tablelock);
+
+    KeyNode *keyNode = ht->table[index];
+    if (keyNode == NULL) {
+        // No key found, return error
+        pthread_rwlock_unlock(&ht->tablelock);
+        return 1; // Key does not exist
+    }
+
+    // Search for the subscriber and remove it
+    for (int i = 0; i < MAX_SESSION_COUNT; i++) {
+        if (keyNode->subscriber_fds[i] == subscriber_fd) {
+            keyNode->subscriber_fds[i] = -1;
+            pthread_rwlock_unlock(&ht->tablelock);
+            return 0; // Subscriber removed
+        }
+    }
+
+    // Subscriber not found
+    pthread_rwlock_unlock(&ht->tablelock);
+    return 1; // Subscriber not found
+}

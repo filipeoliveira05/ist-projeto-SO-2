@@ -103,19 +103,24 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path,
 
   /* criar pipes */
 
-  printf("VAI CRIAR FIFOS");
   if (mkfifo(req_pipe_path, 0640) != 0) {
     perror("mkfifo failed");
     exit(EXIT_FAILURE);
   }
+  fprintf(stderr, "Request pipe created: %s\n", req_pipe_path);
+
   if (mkfifo(resp_pipe_path, 0640) != 0) {
     perror("mkfifo failed");
     exit(EXIT_FAILURE);
   }
+  fprintf(stderr, "Response pipe created: %s\n", resp_pipe_path);
+
   if (mkfifo(notif_pipe_path, 0640) != 0) {
     perror("mkfifo failed");
     exit(EXIT_FAILURE);
   }
+  fprintf(stderr, "Notification pipe created: %s\n", notif_pipe_path);
+
   strcpy(REQ_PIPE_PATH, req_pipe_path);
   strcpy(RESP_PIPE_PATH, resp_pipe_path);
   strcpy(NOTIFICATIONS_PIPE_PATH, notif_pipe_path);
@@ -125,26 +130,45 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path,
   char message[1 + 3 * MAX_PIPE_PATH_LENGTH] = {0};
 
   build_message(req_pipe_path, resp_pipe_path, notif_pipe_path, message);
+  
+  fprintf(stderr,"VAI MANDAR MSG\n");
 
   send_message(fifo_fd_wr, message);
+  fprintf(stderr,"MANDOU MSG\n");
 
-  RESP_FD_RD = open(resp_pipe_path, O_RDONLY);
+  RESP_FD_RD = open(resp_pipe_path, O_RDONLY|O_NONBLOCK);
   if (RESP_FD_RD == -1) {
     perror("Failed to open FIFO");
     exit(EXIT_FAILURE);
   }
-
-  REQ_FD_WR = open(req_pipe_path, O_WRONLY);
+  fprintf(stderr, "Successfully opened response FIFO: %s with FD: %d\n", resp_pipe_path, RESP_FD_RD);
+  
+  REQ_FD_WR = open(req_pipe_path, O_WRONLY | O_NONBLOCK);
   if (REQ_FD_WR == -1) {
-    perror("Failed to open FIFO");
-    exit(EXIT_FAILURE);
+      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+          fprintf(stderr, "Request FIFO is not ready for writing (non-blocking)\n");
+      } else {
+          perror("Failed to open request FIFO");
+      }
+      exit(EXIT_FAILURE);
   }
+  fprintf(stderr, "Successfully opened request FIFO: %s with FD: %d\n", req_pipe_path, REQ_FD_WR);
 
-  NOTIFICATIONS_FD_RD = open(notif_pipe_path, O_RDONLY);
+  NOTIFICATIONS_FD_RD = open(notif_pipe_path, O_RDONLY | O_NONBLOCK);
   if (NOTIFICATIONS_FD_RD == -1) {
-    perror("Failed to open FIFO");
-    exit(EXIT_FAILURE);
+      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+          fprintf(stderr, "Notifications FIFO is not ready for reading (non-blocking)\n");
+      } else {
+          perror("Failed to open notifications FIFO");
+      }
+      exit(EXIT_FAILURE);
   }
+  fprintf(stderr, "Successfully opened notifications FIFO: %s with FD: %d\n", notif_pipe_path, NOTIFICATIONS_FD_RD);
+
+
+
+
+  fprintf(stderr,"CHEGA AQUI DPS DE ABRIR O NOT\n");
   *notif_pipe = NOTIFICATIONS_FD_RD;
 
   char result = read_message(RESP_FD_RD);
