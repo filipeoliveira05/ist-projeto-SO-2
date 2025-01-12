@@ -60,9 +60,50 @@ int kvs_write(size_t num_pairs, char keys[][MAX_STRING_SIZE],
 
   for (size_t i = 0; i < num_pairs; i++)
   {
+    KeyNode *key_node = find_key(kvs_table, keys[i]);
+    int is_new_key = 0;
+
+    if (key_node == NULL)
+    {
+      // doesn't notify
+      is_new_key = 1;
+    }
+
     if (write_pair(kvs_table, keys[i], values[i]) != 0)
     {
       fprintf(stderr, "Failed to write key pair (%s,%s)\n", keys[i], values[i]);
+    }
+
+    if (!is_new_key)
+    {
+      // Notify all subscribed clients
+      ClientSubscribed *client = key_node->Head;
+      while (client != NULL)
+      {
+
+        int notif_fd = open(client->notif_pipe_path, O_WRONLY | O_NONBLOCK);
+        if (notif_fd == -1)
+        {
+          perror("Failed to open notification pipe");
+        }
+        else
+        {
+          // Cria a mensagem de notificação no formato esperado
+          char notification[82] = {0}; // Maximum length if both key and value use up to 40 chars each
+          snprintf(notification, sizeof(notification), "(%s,%s)", keys[i], values[i]);
+          // TODO padding
+          if (write(notif_fd, notification, strlen(notification)) == -1)
+          {
+            perror("Failed to write notification");
+          }
+          else
+          {
+            fprintf(stderr, "Notification sent to client: %s\n", client->notif_pipe_path);
+          }
+          close(notif_fd);
+        }
+        client = client->next; // Move to the next client
+      }
     }
   }
 
@@ -115,6 +156,40 @@ int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE], int fd)
   int aux = 0;
   for (size_t i = 0; i < num_pairs; i++)
   {
+    KeyNode *key_node = find_key(kvs_table, keys[i]);
+
+    if (key_node != NULL)
+    {
+      ClientSubscribed *client = key_node->Head;
+
+      while (client != NULL)
+      {
+
+        int notif_fd = open(client->notif_pipe_path, O_WRONLY | O_NONBLOCK);
+        if (notif_fd == -1)
+        {
+          perror("Failed to open notification pipe");
+        }
+        else
+        {
+          // Cria a mensagem de notificação no formato esperado
+          char notification[82] = {0}; // Maximum length if both key and value use up to 40 chars each
+          snprintf(notification, sizeof(notification), "(%.40s,DELETED)", keys[i]);
+          // TODO padding
+          if (write(notif_fd, notification, strlen(notification)) == -1)
+          {
+            perror("Failed to write notification");
+          }
+          else
+          {
+            fprintf(stderr, "Notification sent to client: %s\n", client->notif_pipe_path);
+          }
+          close(notif_fd);
+        }
+        client = client->next;
+      }
+    }
+
     if (delete_pair(kvs_table, keys[i]) != 0)
     {
       if (!aux)
@@ -219,8 +294,8 @@ int kvs_subscribe(char notif_path[MAX_PIPE_PATH_LENGTH], char key[MAX_STRING_SIZ
   KeyNode *key_node = find_key(kvs_table, key);
   if (key_node != NULL)
   {
-    Client *client = key_node->Head;
-    Client *client_new = malloc(sizeof(Client));
+    ClientSubscribed *client = key_node->Head;
+    ClientSubscribed *client_new = malloc(sizeof(ClientSubscribed));
 
     client_new->next = NULL;
     strcpy(client_new->notif_pipe_path, notif_path);
@@ -254,8 +329,8 @@ int kvs_unsubscribe(char notif_path[MAX_PIPE_PATH_LENGTH], char key[MAX_STRING_S
     return 0; // Failure: Key not found
   }
 
-  Client *client = key_node->Head;
-  Client *client_pre = NULL;
+  ClientSubscribed *client = key_node->Head;
+  ClientSubscribed *client_pre = NULL;
 
   // Traverse the linked list of clients for the given key
   while (client != NULL)
@@ -282,3 +357,72 @@ int kvs_unsubscribe(char notif_path[MAX_PIPE_PATH_LENGTH], char key[MAX_STRING_S
   }
   return 0; // Failure: Client not found
 }
+
+// void add_client(ClientsInSession **head, const char *req_pipe_path, const char *resp_pipe_path, const char *notif_pipe_path)
+// {
+//   ClientsInSession *new_client = (ClientsInSession *)malloc(sizeof(ClientsInSession));
+//   if (!new_client)
+//   {
+//     perror("Failed to allocate memory for new client");
+//     return;
+//   }
+//   // Initialize the new client
+//   strncpy(new_client->req_pipe_path, req_pipe_path, MAX_PIPE_PATH_LENGTH);
+//   strncpy(new_client->resp_pipe_path, resp_pipe_path, MAX_PIPE_PATH_LENGTH);
+//   strncpy(new_client->notif_pipe_path, notif_pipe_path, MAX_PIPE_PATH_LENGTH);
+//   new_client->req_pipe = open(req_pipe_path, O_RDWR);
+//   new_client->resp_pipe = open(resp_pipe_path, O_RDONLY);
+//   new_client->notif_pipe = open(notif_pipe_path, O_RDONLY);
+//   new_client->next = *head; // Add to the front of the list
+
+//   *head = new_client;
+// }
+
+// void remove_client(ClientsInSession **head, const char *notif_pipe_path)
+// {
+//   ClientsInSession *temp = *head;
+//   ClientsInSession *prev = NULL;
+
+//   // Search for the client with the given notif_pipe_path
+//   while (temp != NULL && strcmp(temp->notif_pipe_path, notif_pipe_path) != 0)
+//   {
+//     prev = temp;
+//     temp = temp->next;
+//   }
+
+//   // Client not found
+//   if (temp == NULL)
+//   {
+//     return;
+//   }
+
+//   // Remove the client from the list
+//   if (prev == NULL)
+//   {
+//     *head = temp->next;
+//   }
+//   else
+//   {
+//     prev->next = temp->next;
+//   }
+//   // Close the pipes and free the memory
+//   close(temp->req_pipe);
+//   close(temp->resp_pipe);
+//   close(temp->notif_pipe);
+//   cleanup_fifos(temp->req_pipe_path, temp->req_pipe_path, temp->notif_pipe_path);
+//   free(temp);
+// }
+
+// ClientsInSession *find_client(ClientsInSession *head, const char *resp_pipe_path)
+// {
+//   ClientsInSession *temp = head;
+//   while (temp != NULL)
+//   {
+//     if (strcmp(temp->resp_pipe_path, resp_pipe_path) == 0)
+//     {
+//       return temp;
+//     }
+//     temp = temp->next;
+//   }
+//   return NULL; // Client not found
+// }

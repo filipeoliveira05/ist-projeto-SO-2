@@ -15,6 +15,28 @@ typedef struct SharedData
   pthread_mutex_t directory_mutex;
 } SharedData;
 
+typedef struct ClientsInSession
+{
+  char *req_pipe_path;
+  char *resp_pipe_path;
+  char *notif_pipe_path;
+  char *server_pipe_path;
+  int req_pipe;
+  int resp_pipe;
+  int notif_pipe;
+} ClientsInSession;
+
+typedef struct Subscription
+{
+} Subscription;
+
+typedef struct SessionData
+{
+  Subscription subscription[26];
+  char *server_pipe_path;
+  ClientsInSession clientsInSession[MAX_SESSION_COUNT];
+} SessionData;
+
 /// Initializes the KVS state.
 /// @return 0 if the KVS state was initialized successfully, 1 otherwise.
 int kvs_init();

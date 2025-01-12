@@ -10,10 +10,21 @@
 #include "src/common/constants.h"
 #include "src/common/io.h"
 
-char req_pipe_path[256] = "/tmp/req";
-char resp_pipe_path[256] = "/tmp/resp";
-char notif_pipe_path[256] = "/tmp/notif";
-int notif_pipe;
+void initializesClient(char *req_pipe_path, char *resp_pipe_path, char *notif_pipe_path, char *server_pipe_path, char *argv[], Client *client)
+{
+  // Concatenate the given argv[1] and argv[2] to the respective paths
+  snprintf(req_pipe_path, 256, "%s%s", "/tmp/req", argv[1]);
+  snprintf(resp_pipe_path, 256, "%s%s", "/tmp/resp", argv[1]);
+  snprintf(notif_pipe_path, 256, "%s%s", "/tmp/notif", argv[1]);
+  snprintf(server_pipe_path, 256, "%s%s", "/tmp/server", argv[2]);
+
+  // Now assign these paths to the client struct
+  // Dynamically allocate memory and copy the string into client fields
+  client->req_pipe_path = strdup(req_pipe_path);
+  client->resp_pipe_path = strdup(resp_pipe_path);
+  client->notif_pipe_path = strdup(notif_pipe_path);
+  client->server_pipe_path = strdup(server_pipe_path);
+}
 
 void print_stdout(char operation_char, char response_code)
 {
@@ -39,8 +50,10 @@ void print_stdout(char operation_char, char response_code)
   fprintf(stdout, "Server returned %c for operation: %s\n", response_code, operation);
 }
 
-void *process_stdin()
+void *process_stdin(void *arg)
 {
+  Client *client = (Client *)arg; // Cast back to Client *
+
   char keys[MAX_NUMBER_SUB][MAX_STRING_SIZE] = {0};
   unsigned int delay_ms;
   size_t num;
@@ -52,14 +65,12 @@ void *process_stdin()
     switch (get_next(STDIN_FILENO))
     {
     case CMD_DISCONNECT:
-      if (kvs_disconnect(req_pipe_path, resp_pipe_path))
+      if (kvs_disconnect(client))
       {
         fprintf(stderr, "Failed to disconnect to the server\n");
         print_stdout('2', '1');
         return NULL;
       }
-      close(notif_pipe);
-      unlink(notif_pipe_path);
       print_stdout('2', '0');
       printf("Disconnected from server\n");
       return NULL;
@@ -73,7 +84,7 @@ void *process_stdin()
         continue;
       }
 
-      if (kvs_subscribe(keys[0]))
+      if (!kvs_subscribe(keys[0], client))
       {
         print_stdout('3', '1');
         fprintf(stderr, "Command subscribe failed\n");
@@ -91,10 +102,10 @@ void *process_stdin()
         continue;
       }
 
-      if (kvs_unsubscribe(keys[0]))
+      if (kvs_unsubscribe(keys[0], client))
       {
         print_stdout('4', '1');
-        fprintf(stderr, "Command subscribe failed\n");
+        fprintf(stderr, "Command unsubscribe failed\n");
       }
 
       print_stdout('4', '0');
@@ -128,15 +139,26 @@ void *process_stdin()
   }
 }
 
-void *process_notifications()
+void *process_notifications(void *arg)
 {
+  Client *client = (Client *)arg; // Cast back to Client *
   char buf[256];
 
-  notif_pipe = open(notif_pipe_path, O_RDONLY);
+  int notif_pipe = open(client->notif_pipe_path, O_RDONLY);
   while (1)
   {
-    read(notif_pipe, buf, sizeof(buf));
-    fprintf(stdout, "%s\n", buf);
+    // Read data from the notification pipe
+    ssize_t bytes_read = read(notif_pipe, buf, sizeof(buf) - 1);
+
+    if (bytes_read > 0)
+    {
+      // Null-terminate the string and print it
+      buf[bytes_read] = '\0';
+      fprintf(stdout, "%s\n", buf);
+
+      // Clear the buffer to avoid printing old data in the future
+      memset(buf, 0, sizeof(buf));
+    }
   }
 }
 
@@ -148,30 +170,24 @@ int main(int argc, char *argv[])
             argv[0]);
     return 1;
   }
+  Client *client = (Client *)malloc(sizeof(Client));
+  if (client == NULL)
+  {
+    perror("Failed to allocate memory for client");
+    return 1;
+  }
 
-  char keys[MAX_NUMBER_SUB][MAX_STRING_SIZE] = {0};
-  unsigned int delay_ms;
-  size_t num;
+  char req_pipe_path[256] = "/tmp/req";
+  char resp_pipe_path[256] = "/tmp/resp";
+  char notif_pipe_path[256] = "/tmp/notif";
+  char server_pipe_path[256] = "/tmp/server";
 
   // Permite ao cliente receber notificações
-  int notif_pipe_fd;
-
-  strncat(req_pipe_path, argv[1], strlen(argv[1]) * sizeof(char));
-  memset(req_pipe_path + strlen(req_pipe_path), '\0', sizeof(req_pipe_path) - strlen(req_pipe_path));
-
-  strncat(resp_pipe_path, argv[1], strlen(argv[1]) * sizeof(char));
-  memset(resp_pipe_path + strlen(resp_pipe_path), '\0', sizeof(resp_pipe_path) - strlen(resp_pipe_path));
-
-  strncat(notif_pipe_path, argv[1], strlen(argv[1]) * sizeof(char));
-  memset(notif_pipe_path + strlen(notif_pipe_path), '\0', sizeof(notif_pipe_path) - strlen(notif_pipe_path));
-
-  char server_pipe_path[256];
-  strcpy(server_pipe_path, "/tmp/server");
-  strcat(server_pipe_path, argv[2]);
+  initializesClient(req_pipe_path, resp_pipe_path, notif_pipe_path, server_pipe_path, argv, client);
 
   fprintf(stderr, "Conecting...\n");
   // TODO open pipes
-  if (kvs_connect(req_pipe_path, resp_pipe_path, server_pipe_path, notif_pipe_path, &notif_pipe) != 0)
+  if (kvs_connect(client->req_pipe_path, client->resp_pipe_path, client->server_pipe_path, client->notif_pipe_path, client) != 0)
   {
     fprintf(stderr, "Failed to connect to the server\n");
     return 1;
@@ -179,9 +195,13 @@ int main(int argc, char *argv[])
   fprintf(stderr, "Conected Successfully\n");
 
   pthread_t threads[2];
-
-  pthread_create(&threads[0], NULL, process_stdin, NULL);
-  pthread_create(&threads[1], NULL, process_notifications, NULL);
+  pthread_create(&threads[0], NULL, process_stdin, (void *)client);
+  pthread_create(&threads[1], NULL, process_notifications, (void *)client);
   pthread_join(threads[0], NULL);
   pthread_detach(threads[1]);
+  free(client->req_pipe_path);
+  free(client->resp_pipe_path);
+  free(client->notif_pipe_path);
+  free(client->server_pipe_path);
+  free(client);
 }

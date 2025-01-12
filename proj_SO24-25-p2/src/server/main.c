@@ -18,10 +18,9 @@
 #include "parser.h"
 #include "pthread.h"
 
+SessionData *sessionData;
 pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t n_current_backups_lock = PTHREAD_MUTEX_INITIALIZER;
-sem_t SEM_BUFFER_SPACE;
-sem_t SEM_BUFFER_CLIENTS;
 pthread_mutex_t BUFFER_MUTEX;
 
 size_t active_backups = 0; // Number of active backups
@@ -480,14 +479,16 @@ void *verify_server_pipe()
     read(server_pipe_fd, buf, sizeof(buf));
     if (buf[0] == '1')
     {
+      printf("BUFFER: '%s'\n", buf);
       memcpy(req_pipe_path, buf + 1, MAX_PIPE_PATH_LENGTH);
-      // printf("req_pipe_path: %s\n", req_pipe_path); // Print to verify
+      printf("CLIENT %c CONECTED\n", req_pipe_path[strlen(req_pipe_path) - 1]); // Print to verify
+      printf("req_pipe_path: %s\n", req_pipe_path);                             // Print to verify
 
       memcpy(resp_pipe_path, buf + 1 + MAX_PIPE_PATH_LENGTH, MAX_PIPE_PATH_LENGTH);
-      // printf("resp_pipe_path: %s\n", resp_pipe_path); // Print to verify
+      printf("resp_pipe_path: %s\n", resp_pipe_path); // Print to verify
 
       memcpy(notif_pipe_path, buf + 1 + 2 * MAX_PIPE_PATH_LENGTH, MAX_PIPE_PATH_LENGTH);
-      // printf("notif_pipe_path: %s\n", notif_pipe_path); // Print to verify
+      printf("notif_pipe_path: %s\n", notif_pipe_path); // Print to verify
 
       resp_pipe_fd = open(resp_pipe_path, O_WRONLY);
       write(resp_pipe_fd, "0", 1);
@@ -550,12 +551,26 @@ int main(int argc, char **argv)
     write_str(STDERR_FILENO, "Invalid number of threads\n");
     return 0;
   }
+
   strcpy(register_FIFO_name, "/tmp/server");
   strcat(register_FIFO_name, argv[4]);
 
+  sessionData = malloc(sizeof(SessionData));
+  if (sessionData == NULL)
+  {
+    perror("malloc failed");
+  }
   fprintf(stderr, "FIFO name: %s\n", register_FIFO_name);
   createsRegisterFIFO();
   fprintf(stderr, "CRIOU REGISTER FIFO: %s\n", register_FIFO_name);
+
+  sessionData->server_pipe_path = malloc(strlen(register_FIFO_name) + 1); // Allocate memory
+  if (sessionData->server_pipe_path == NULL)
+  {
+    perror("malloc failed");
+  }
+
+  strncpy(sessionData->server_pipe_path, register_FIFO_name, strlen(register_FIFO_name) + 1);
 
   pthread_t thread_server_pipe;
   pthread_create(&thread_server_pipe, NULL, verify_server_pipe, NULL);

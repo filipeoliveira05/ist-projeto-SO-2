@@ -6,18 +6,18 @@
 #include <stddef.h>
 #include "src/common/constants.h"
 
-typedef struct Client
+typedef struct ClientSubscribed
 {
-  struct Client *next;
+  struct ClientSubscribed *next;
   char notif_pipe_path[MAX_PIPE_PATH_LENGTH + 1];
-} Client;
+} ClientSubscribed;
 
 typedef struct KeyNode
 {
   char *key;
   char *value;
   struct KeyNode *next;
-  struct Client *Head;
+  struct ClientSubscribed *Head;
   int n_clients;
 } KeyNode;
 
