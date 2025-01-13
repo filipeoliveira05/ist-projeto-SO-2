@@ -37,7 +37,7 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path, char cons
 {
 
   char buf[MAX_PIPE_BUFFER_SIZE];
-  // fprintf(stderr, "Started cleanup of FIFOs\n");
+  //fprintf(stderr, "Started cleanup of FIFOs\n");
 
   cleanup_fifos(req_pipe_path, resp_pipe_path, notif_pipe_path);
   // fprintf(stderr, "Started making FIFOs\n");

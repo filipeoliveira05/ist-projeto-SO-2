@@ -13,6 +13,7 @@
 
 #include "constants.h"
 #include "../common/constants.h"
+#include "../common/protocol.h"
 #include "io.h"
 #include "operations.h"
 #include "parser.h"
@@ -368,6 +369,8 @@ void *handle_requests(void *arg)
         close(client->resp_pipe);
       }
       fprintf(stderr, "Verify_requests: Disconnect response sent.\n");
+      remove_client_from_session(sessionData, client->req_pipe_path);
+      sem_post(&client_thread_semaphore);
       return NULL; // Exit the thread completely
     }
 
@@ -377,7 +380,7 @@ void *handle_requests(void *arg)
       fprintf(stderr, "Verify_requests: Read request from pipe: %s\n", buf);
       switch (buf[0])
       {
-      case '2':
+      case OP_CODE_DISCONNECT:
         fprintf(stderr, "Verify_requests: Disconnect request received.\n");
         int disconect_result = kvs_disconnect_client(client->notif_pipe_path);
         client->resp_pipe = open(client->resp_pipe_path, O_WRONLY);
@@ -408,9 +411,11 @@ void *handle_requests(void *arg)
           close(client->resp_pipe);
         }
         fprintf(stderr, "Verify_requests: Disconnect response sent.\n");
+        remove_client_from_session(sessionData, client->req_pipe_path);
+        sem_post(&client_thread_semaphore);
         return NULL; // Exit the thread completely
 
-      case '3':
+      case OP_CODE_SUBSCRIBE:
         strcpy(key, buf + 1);
         fprintf(stderr, "Verify_requests: Subscribe request received for key: %s\n", key);
         int subscribe_result = kvs_subscribe(client->notif_pipe_path, key); // kvs_subscribe should return 1 on success, 0 on failure
@@ -444,7 +449,7 @@ void *handle_requests(void *arg)
 
         break;
 
-      case '4':
+      case OP_CODE_UNSUBSCRIBE:
         strcpy(key, buf + 1);
         fprintf(stderr, "Verify_requests: Unsubscribe request received for key: %s\n", key);
         int unsubscribe_result = kvs_unsubscribe(client->notif_pipe_path, key); // kvs_unsubscribe should return 1 on success, 0 on failure
@@ -484,6 +489,7 @@ void *handle_requests(void *arg)
     }
   }
 }
+
 void *handle_server_pipe(void *arg)
 {
   SessionData *sessionData = (SessionData *)arg; // Cast back to Session data *
@@ -504,7 +510,7 @@ void *handle_server_pipe(void *arg)
     {
       continue; // Skip if no data read
     }
-    if (buf[0] == '1')
+    if (buf[0] == OP_CODE_CONNECT)
     {
       memcpy(req_pipe_path, buf + 1, MAX_PIPE_PATH_LENGTH);
       printf("CLIENT %c CONECTED\n", req_pipe_path[strlen(req_pipe_path) - 1]); // Print to verify
@@ -516,17 +522,22 @@ void *handle_server_pipe(void *arg)
       memcpy(notif_pipe_path, buf + 1 + 2 * MAX_PIPE_PATH_LENGTH, MAX_PIPE_PATH_LENGTH);
       printf("notif_pipe_path: %s\n", notif_pipe_path); // Print to verify
 
-      // int value;
-      // sem_getvalue(&client_thread_semaphore, &value);
-      // printf("Slots available before acquiring: %d\n", value);
+      int value;
+      sem_getvalue(&client_thread_semaphore, &value);
+      printf("Slots available before acquiring: %d\n", value);
 
-      // // Wait for a slot to handle the client (using semaphore)
-      // sem_wait(&client_thread_semaphore); // Block if no available threads
+      // Wait for a slot to handle the client (using semaphore)
+      if (value <= 0) {
+        printf("Waiting for thread to be available\n");
+      }
+      sem_wait(&client_thread_semaphore); // Block if no available threads
 
-      // // Print the updated available slots after acquiring the slot
-      // sem_getvalue(&client_thread_semaphore, &value);
-      // printf("Slots available after acquiring: %d\n", value);
-      // Join threads that have completed before spawning new ones
+      // Print the updated available slots after acquiring the slot
+      sem_getvalue(&client_thread_semaphore, &value);
+      printf("Slots available after acquiring: %d\n", value);
+      
+      /*
+      //Join threads that have completed before spawning new ones
       for (int i = 0; i < active_thread_count; i++)
       {
         if (pthread_join(client_threads[i], NULL) == 0)
@@ -540,6 +551,8 @@ void *handle_server_pipe(void *arg)
           i--; // Recheck the current index
         }
       }
+      */
+      
       Client *client = add_client_to_session(sessionData, req_pipe_path, resp_pipe_path, notif_pipe_path, indexClientCount);
       if (client != NULL)
       {
@@ -557,22 +570,21 @@ void *handle_server_pipe(void *arg)
         write(client->resp_pipe, "0", 1);
 
         client->req_pipe = open(client->req_pipe_path, O_RDONLY);
-        // pthread_t thread_request_pipe;
         pthread_create(&client_threads[active_thread_count++], NULL, handle_requests, client);
-        // pthread_join(&client_threads[active_thread_count], NULL);
+      
+      } else {
+        sem_post(&client_thread_semaphore); // Libera slot caso falhe
       }
+    } else {
+        strncpy(resp_pipe_path, buf + 1 + MAX_PIPE_PATH_LENGTH, MAX_PIPE_PATH_LENGTH);
+        resp_pipe_fd = open(resp_pipe_path, O_WRONLY);
+        write(resp_pipe_fd, "1", 1);
+        close(resp_pipe_fd);
     }
-    else
-    {
-      strncpy(resp_pipe_path, buf + 1 + MAX_PIPE_PATH_LENGTH, MAX_PIPE_PATH_LENGTH);
-      resp_pipe_fd = open(resp_pipe_path, O_WRONLY);
-      write(resp_pipe_fd, "1", 1);
-      // return NULL;
-    }
-    close(resp_pipe_fd);
-  }
+}
   sem_destroy(&client_thread_semaphore);
 }
+
 static void dispatch_threads(DIR *dir)
 {
   pthread_t *threads = malloc(max_threads * sizeof(pthread_t));

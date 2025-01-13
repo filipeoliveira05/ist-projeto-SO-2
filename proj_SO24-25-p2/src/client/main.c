@@ -7,6 +7,7 @@
 
 #include "parser.h"
 #include "src/client/api.h"
+#include "src/common/protocol.h"
 #include "src/common/constants.h"
 #include "src/common/io.h"
 
@@ -33,16 +34,16 @@ void print_stdout(char operation_char, char response_code)
 
   switch (operation_char)
   {
-  case '1':
+  case OP_CODE_CONNECT:
     strcpy(operation, "connect");
     break;
-  case '2':
+  case OP_CODE_DISCONNECT:
     strcpy(operation, "disconnect");
     break;
-  case '3':
+  case OP_CODE_SUBSCRIBE:
     strcpy(operation, "subscribe");
     break;
-  case '4':
+  case OP_CODE_UNSUBSCRIBE:
     strcpy(operation, "unsubscribe");
     break;
   default:
@@ -69,10 +70,10 @@ void *process_stdin(void *arg)
       if (kvs_disconnect(client))
       {
         // fprintf(stderr, "Failed to disconnect to the server\n");
-        print_stdout('2', '1');
+        print_stdout(OP_CODE_DISCONNECT, '1');
         return NULL;
       }
-      print_stdout('2', '0');
+      print_stdout(OP_CODE_DISCONNECT, '0');
       // printf("Disconnected from server\n");
       return NULL;
 
@@ -80,18 +81,18 @@ void *process_stdin(void *arg)
       num = parse_list(STDIN_FILENO, keys, 1, MAX_STRING_SIZE);
       if (num == 0)
       {
-        print_stdout('3', '1');
+        print_stdout(OP_CODE_SUBSCRIBE, '1');
         // fprintf(stderr, "Invalid command. See HELP for usage\n");
         continue;
       }
 
       if (!kvs_subscribe(keys[0], client))
       {
-        print_stdout('3', '1');
+        print_stdout(OP_CODE_SUBSCRIBE, '1');
         // fprintf(stderr, "Command subscribe failed\n");
         continue;
       }
-      print_stdout('3', '0');
+      print_stdout(OP_CODE_SUBSCRIBE, '0');
 
       break;
 
@@ -99,18 +100,19 @@ void *process_stdin(void *arg)
       num = parse_list(STDIN_FILENO, keys, 1, MAX_STRING_SIZE);
       if (num == 0)
       {
-        print_stdout('4', '1');
+        print_stdout(OP_CODE_UNSUBSCRIBE, '1');
         // fprintf(stderr, "Invalid command. See HELP for usage\n");
         continue;
       }
 
       if (kvs_unsubscribe(keys[0], client))
       {
-        print_stdout('4', '1');
+        print_stdout(OP_CODE_UNSUBSCRIBE, '1');
         // fprintf(stderr, "Command unsubscribe failed\n");
+        continue;
       }
 
-      print_stdout('4', '0');
+      print_stdout(OP_CODE_UNSUBSCRIBE, '0');
       break;
 
     case CMD_DELAY:
