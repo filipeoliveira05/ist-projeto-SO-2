@@ -316,7 +316,7 @@ void createsRegisterFIFO()
   }
 }
 
-void *verify_requests(void *arg)
+void *handle_requests(void *arg)
 {
   Client *client = (Client *)arg;
 
@@ -338,7 +338,36 @@ void *verify_requests(void *arg)
 
     if (bytes_read == 0)
     {
-      // TODO KVS DISCONECT
+      fprintf(stderr, "Verify_requests: Disconnect request received.\n");
+      int disconect_result = kvs_disconnect_client(client->notif_pipe_path);
+      client->resp_pipe = open(client->resp_pipe_path, O_WRONLY);
+      if (client->resp_pipe == -1)
+      {
+        perror("Verify_requests: Failed to open response pipe for writing");
+      }
+      else
+      {
+        const char *response_code = (disconect_result == 1) ? "20" : "21"; // "20" for success, "21" for failure
+        ssize_t bytes_written = write(client->resp_pipe, response_code, 2);
+        if (bytes_written < 2)
+        {
+          perror("Verify_requests: Failed to write subscribe response to response pipe");
+        }
+        else
+        {
+          fprintf(stderr, "Verify_requests: Subscribe response successfully sent for key: %s\n", key);
+          if (disconect_result)
+          {
+            fprintf(stderr, "Verify_requests: Subscription Successfull\n");
+          }
+          else
+          {
+            fprintf(stderr, "Verify_requests: Subscription Failed\n");
+          }
+        }
+        close(client->resp_pipe);
+      }
+      fprintf(stderr, "Verify_requests: Disconnect response sent.\n");
     }
 
     if (bytes_read > 0)
@@ -349,10 +378,34 @@ void *verify_requests(void *arg)
       {
       case '2':
         fprintf(stderr, "Verify_requests: Disconnect request received.\n");
-        // TODO kvs disconec - eleminar todas subs do client
+        int disconect_result = kvs_disconnect_client(client->notif_pipe_path);
         client->resp_pipe = open(client->resp_pipe_path, O_WRONLY);
-        write(client->resp_pipe, "20", 2);
-        close(client->resp_pipe);
+        if (client->resp_pipe == -1)
+        {
+          perror("Verify_requests: Failed to open response pipe for writing");
+        }
+        else
+        {
+          const char *response_code = (disconect_result == 1) ? "20" : "21"; // "20" for success, "21" for failure
+          ssize_t bytes_written = write(client->resp_pipe, response_code, 2);
+          if (bytes_written < 2)
+          {
+            perror("Verify_requests: Failed to write subscribe response to response pipe");
+          }
+          else
+          {
+            fprintf(stderr, "Verify_requests: Subscribe response successfully sent for key: %s\n", key);
+            if (disconect_result)
+            {
+              fprintf(stderr, "Verify_requests: Subscription Successfull\n");
+            }
+            else
+            {
+              fprintf(stderr, "Verify_requests: Subscription Failed\n");
+            }
+          }
+          close(client->resp_pipe);
+        }
         fprintf(stderr, "Verify_requests: Disconnect response sent.\n");
         break;
 
@@ -367,7 +420,7 @@ void *verify_requests(void *arg)
         }
         else
         {
-          const char *response_code = (subscribe_result == 1) ? "30" : "31";
+          const char *response_code = (subscribe_result == 0) ? "30" : "31";
           ssize_t bytes_written = write(client->resp_pipe, response_code, 2);
           if (bytes_written < 2)
           {
@@ -430,9 +483,9 @@ void *verify_requests(void *arg)
     }
   }
 }
-void *verify_server_pipe(void *arg)
+void *handle_server_pipe(void *arg)
 {
-  SessionData *sessionData = (SessionData *)arg; // Cast back to Client *
+  SessionData *sessionData = (SessionData *)arg; // Cast back to Session data *
   char req_pipe_path[MAX_PIPE_PATH_LENGTH];
   char resp_pipe_path[MAX_PIPE_PATH_LENGTH];
   char notif_pipe_path[MAX_PIPE_PATH_LENGTH];
@@ -440,7 +493,7 @@ void *verify_server_pipe(void *arg)
   int resp_pipe_fd;
   int req_pipe_fd;
   server_pipe_fd = open(register_FIFO_name, O_RDONLY);
-  sem_init(&client_thread_semaphore, 0, 10);
+  sem_init(&client_thread_semaphore, 0, MAX_SESSION_COUNT);
   pthread_t client_threads[MAX_SESSION_COUNT];
   int active_thread_count = 0;
   while (1)
@@ -448,7 +501,6 @@ void *verify_server_pipe(void *arg)
     ssize_t bytes_read = read(server_pipe_fd, buf, 1 + (MAX_PIPE_PATH_LENGTH * 3));
     if (buf[0] == '1')
     {
-
       memcpy(req_pipe_path, buf + 1, MAX_PIPE_PATH_LENGTH);
       printf("CLIENT %c CONECTED\n", req_pipe_path[strlen(req_pipe_path) - 1]); // Print to verify
       printf("req_pipe_path: %s\n", req_pipe_path);                             // Print to verify
@@ -496,12 +548,12 @@ void *verify_server_pipe(void *arg)
         printf("  Notification Pipe FD: %d\n", client->notif_pipe);
         printf("\n");
 
-        resp_pipe_fd = open(resp_pipe_path, O_WRONLY);
-        write(resp_pipe_fd, "0", 1);
+        client->resp_pipe = open(client->resp_pipe_path, O_WRONLY);
+        write(client->resp_pipe, "0", 1);
 
-        req_pipe_fd = open(req_pipe_path, O_RDONLY);
+        client->req_pipe = open(client->req_pipe_path, O_RDONLY);
         // pthread_t thread_request_pipe;
-        pthread_create(&client_threads[active_thread_count++], NULL, verify_requests, client);
+        pthread_create(&client_threads[active_thread_count++], NULL, handle_requests, client);
         // pthread_join(thread_request_pipe, NULL);
       }
     }
@@ -543,7 +595,7 @@ static void dispatch_threads(DIR *dir)
   // ler do FIFO de registo
 
   pthread_t thread_server_pipe;
-  pthread_create(&thread_server_pipe, NULL, verify_server_pipe, (void *)sessionData);
+  pthread_create(&thread_server_pipe, NULL, handle_server_pipe, (void *)sessionData);
 
   pthread_join(thread_server_pipe, NULL);
 

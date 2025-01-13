@@ -289,10 +289,73 @@ void kvs_wait(unsigned int delay_ms)
   nanosleep(&delay, NULL);
 }
 
-int kvs_disconnect() {}
+// Disconnect a client and remove all its subscriptions
+int kvs_disconnect_client(const char *notif_pipe_path)
+{
+  if (kvs_table == NULL)
+  {
+    fprintf(stderr, "KVS state must be initialized\n");
+    return 0;
+  }
+  pthread_rwlock_wrlock(&kvs_table->tablelock); // Lock for write access
+  printf("Disconnecting client with notification pipe path: %s\n", notif_pipe_path);
+
+  for (int i = 0; i < TABLE_SIZE; i++)
+  {
+    KeyNode *currentKeyNode = kvs_table->table[i];
+
+    while (currentKeyNode != NULL)
+    {
+      ClientSubscribed *prev = NULL;
+      ClientSubscribed *currentClient = currentKeyNode->Head;
+
+      while (currentClient != NULL)
+      {
+        // Check if this client matches the one to disconnect
+        if (strcmp(currentClient->notif_pipe_path, notif_pipe_path) == 0)
+        {
+          printf("Removing client from key: %s\n", currentKeyNode->key);
+
+          // Remove the client from the list
+          if (prev == NULL)
+          {
+            // The client is at the head of the list
+            currentKeyNode->Head = currentClient->next;
+          }
+          else
+          {
+            // The client is in the middle or end of the list
+            prev->next = currentClient->next;
+          }
+
+          // Free the memory for this client
+          free(currentClient);
+
+          // Update the count of subscribed clients
+          currentKeyNode->n_clients--;
+
+          printf("Client removed. Key: %s, Remaining Clients: %d\n", currentKeyNode->key, currentKeyNode->n_clients);
+          break; // Stop searching this list
+        }
+
+        // Move to the next client
+        prev = currentClient;
+        currentClient = currentClient->next;
+      }
+
+      currentKeyNode = currentKeyNode->next; // Move to the next key node
+    }
+  }
+
+  pthread_rwlock_unlock(&kvs_table->tablelock); // Release the lock
+  printf("Client successfully disconnected and all subscriptions removed.\n");
+  return 1;
+}
 
 int kvs_subscribe(char notif_path[MAX_PIPE_PATH_LENGTH], char key[MAX_STRING_SIZE])
 {
+  pthread_rwlock_wrlock(&kvs_table->tablelock);
+
   KeyNode *key_node = find_key(kvs_table, key);
   if (key_node != NULL)
   {
@@ -317,18 +380,25 @@ int kvs_subscribe(char notif_path[MAX_PIPE_PATH_LENGTH], char key[MAX_STRING_SIZ
   }
   else
   {
+    pthread_rwlock_unlock(&kvs_table->tablelock);
+
     return 0;
   }
+  pthread_rwlock_unlock(&kvs_table->tablelock);
+
   return 1;
 }
 int kvs_unsubscribe(char notif_path[MAX_PIPE_PATH_LENGTH], char key[MAX_STRING_SIZE])
 {
+  pthread_rwlock_wrlock(&kvs_table->tablelock);
+
   KeyNode *key_node = find_key(kvs_table, key);
 
   // If the key does not exist in the key-value store
   if (key_node == NULL)
   {
-    return 0; // Failure: Key not found
+    pthread_rwlock_unlock(&kvs_table->tablelock); // Unlock before returning failure
+    return 0;                                     // Failure: Key not found
   }
 
   ClientSubscribed *client = key_node->Head;
@@ -351,12 +421,14 @@ int kvs_unsubscribe(char notif_path[MAX_PIPE_PATH_LENGTH], char key[MAX_STRING_S
 
       free(client);
       key_node->n_clients--;
-      return 1; // Success: Unsubscription successful
+      pthread_rwlock_unlock(&kvs_table->tablelock); // Unlock before returning success
+      return 1;                                     // Success: Unsubscription successful
     }
 
     client_pre = client;
     client = client->next;
   }
+  pthread_rwlock_unlock(&kvs_table->tablelock);
   return 0; // Failure: Client not found
 }
 
