@@ -273,7 +273,7 @@ static int run_job(int in_fd, int out_fd, char *filename)
                 "  DELETE [key,key2,...]\n"
                 "  SHOW\n"
                 "  WAIT <delay_ms>\n"
-                "  BACKUP\n" // Not implemented
+                "  BACKUP\n"
                 "  HELP\n");
 
       break;
@@ -288,7 +288,6 @@ static int run_job(int in_fd, int out_fd, char *filename)
   }
 }
 
-// frees arguments
 static void *get_file(void *arguments)
 {
   struct SharedData *thread_data = (struct SharedData *)arguments;
@@ -373,16 +372,16 @@ void createsRegisterFIFO()
     write_str(STDERR_FILENO, "Invalid or empty FIFO name\n");
   }
 
-  // Remove o pipe, se existir
+  // Removes pipe if already exists
   if (unlink(register_FIFO_name) != 0 && errno != ENOENT)
   {
     perror("unlink failed");
-    pthread_exit(NULL); // Exit thread instead of the whole process
+    // pthread_exit(NULL); // Exit thread instead of the whole process
   }
   if (mkfifo(register_FIFO_name, 0777) != 0)
   {
     perror("mkfifo failed");
-    pthread_exit(NULL);
+    // pthread_exit(NULL);      TODO CHECK SE FAZ DIFERENÇA, MAIS VALE TIRAR
   }
 }
 

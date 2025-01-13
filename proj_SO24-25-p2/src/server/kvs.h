@@ -46,6 +46,10 @@ int write_pair(HashTable *ht, const char *key, const char *value);
 // return the value if found, NULL otherwise.
 char *read_pair(HashTable *ht, const char *key);
 
+/// Finds a key in the hash table.
+/// @param ht Pointer to the hash table where the key should be searched.
+/// @param key The key to search for.
+/// @return A pointer to the KeyNode containing the key, or NULL if the key is not found.
 KeyNode *find_key(HashTable *ht, const char *key);
 
 /// Deletes a pair from the table.
@@ -54,6 +58,8 @@ KeyNode *find_key(HashTable *ht, const char *key);
 /// @return 0 if the node was deleted successfully, 1 otherwise.
 int delete_pair(HashTable *ht, const char *key);
 
+/// Deletes all subscriptions associated with a specific key.
+/// @param key_node Pointer to the KeyNode for which all subscriptions should be deleted.
 void delete_all_subscriptions_of_key(KeyNode *key_node);
 
 /// Frees the hashtable.

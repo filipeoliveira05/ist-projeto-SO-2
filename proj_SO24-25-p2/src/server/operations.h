@@ -98,15 +98,46 @@ void set_n_current_backups(int _n_current_backups);
 // @return n_current_backups
 int get_n_current_backups();
 
+/// Disconnects a client by its notification pipe path.
+/// @param notif_pipe_path The path to the notification pipe associated with the client.
+/// @return 1 if the client was successfully disconnected, 0 otherwise.
 int kvs_disconnect_client(const char *notif_pipe_path);
 
+/// Subscribes a client to notifications for a specific key.
+/// @param notif_path The path to the notification pipe for the client.
+/// @param key The key to subscribe to.
+/// @return 1 if the subscription was successful, 0 otherwise.
 int kvs_subscribe(char notif_path[MAX_PIPE_PATH_LENGTH], char key[MAX_STRING_SIZE]);
+
+/// Unsubscribes a client from notifications for a specific key.
+/// @param notif_path The path to the notification pipe for the client.
+/// @param key The key to unsubscribe from.
+/// @return 1 if the unsubscription was successful, 0 otherwise.
 int kvs_unsubscribe(char notif_path[MAX_PIPE_PATH_LENGTH], char key[MAX_STRING_SIZE]);
 
+/// Adds a client to the current session.
+/// @param session Pointer to the session data.
+/// @param req_pipe_path Path to the request pipe of the client.
+/// @param resp_pipe_path Path to the response pipe of the client.
+/// @param notif_pipe_path Path to the notification pipe of the client.
+/// @param indexClient Index of the client in the session.
+/// @param thread_slot The thread slot assigned to the client.
+/// @return A pointer to the newly added client, or NULL if the client could not be added.
 Client *add_client_to_session(SessionData *session, const char *req_pipe_path, const char *resp_pipe_path, const char *notif_pipe_path, int indexClient, int thread_slot);
+
+/// Removes a client from the current session using the request pipe path.
+/// @param session Pointer to the session data.
+/// @param req_pipe_path The request pipe path of the client to remove.
+/// @return 0 if the client was successfully removed, -1 otherwise.
 int remove_client_from_session(SessionData *session, const char *req_pipe_path);
+
+/// Removes all clients from the current session.
+/// @param session Pointer to the session data.
+/// @return 0 if the remove was succesfull, -1 otherwise
 int remove_all_clients(SessionData *session);
 
+/// Deletes all active subscriptions for keys in the KVS.
+/// This function is used to clean up subscriptions when necessary.
 void delete_all_subscriptions();
 
 #endif // KVS_OPERATIONS_H

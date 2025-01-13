@@ -13,7 +13,6 @@
 
 void initializesClient(char *req_pipe_path, char *resp_pipe_path, char *notif_pipe_path, char *server_pipe_path, char *argv[], Client *client)
 {
-  // TODO MUDAR PARA MMSETS
   //  Concatenate the given argv[1] and argv[2] to the respective paths
   snprintf(req_pipe_path, 256, "%s%s", "/tmp/req", argv[1]);
   snprintf(resp_pipe_path, 256, "%s%s", "/tmp/resp", argv[1]);
@@ -186,7 +185,6 @@ int main(int argc, char *argv[])
   char notif_pipe_path[256] = "/tmp/notif";
   char server_pipe_path[256] = "/tmp/server";
 
-  // Permite ao cliente receber notificações
   initializesClient(req_pipe_path, resp_pipe_path, notif_pipe_path, server_pipe_path, argv, client);
 
   if (kvs_connect(client->req_pipe_path, client->resp_pipe_path, client->server_pipe_path, client->notif_pipe_path, client) != 0)

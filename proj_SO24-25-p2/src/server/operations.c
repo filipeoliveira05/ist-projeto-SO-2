@@ -287,7 +287,6 @@ void kvs_wait(unsigned int delay_ms)
   nanosleep(&delay, NULL);
 }
 
-// Disconnect a client and remove all its subscriptions
 int kvs_disconnect_client(const char *notif_pipe_path)
 {
   if (kvs_table == NULL)
@@ -386,6 +385,7 @@ int kvs_subscribe(char notif_path[MAX_PIPE_PATH_LENGTH], char key[MAX_STRING_SIZ
 
   return 1;
 }
+
 int kvs_unsubscribe(char notif_path[MAX_PIPE_PATH_LENGTH], char key[MAX_STRING_SIZE])
 {
   pthread_rwlock_wrlock(&kvs_table->tablelock);
@@ -430,11 +430,10 @@ int kvs_unsubscribe(char notif_path[MAX_PIPE_PATH_LENGTH], char key[MAX_STRING_S
   return 0; // Failure: Client not found
 }
 
-// Function to add a client to the session
 Client *add_client_to_session(SessionData *session, const char *req_pipe_path, const char *resp_pipe_path, const char *notif_pipe_path, int indexClient, int thread_slot)
 {
   printf("SESSION ACTIVE CLIENT BEFORE: %d\n", session->activeClients);
-  // Check if the session has room for another client (max of 10 clients)
+  // Check if the session has room for another client
   if (session->activeClients >= MAX_SESSION_COUNT)
   {
     printf("Error: Session is full. Cannot add more clients.\n");
@@ -507,7 +506,6 @@ Client *add_client_to_session(SessionData *session, const char *req_pipe_path, c
   return new_client_node->Client; // Success
 }
 
-// Function to remove a client from the session by req_pipe_path
 int remove_client_from_session(SessionData *session, const char *req_pipe_path)
 {
   // Check if the session is empty
@@ -602,17 +600,3 @@ void delete_all_subscriptions()
 
   pthread_rwlock_unlock(&kvs_table->tablelock);
 }
-
-// ClientsInSession *find_client(ClientsInSession *head, const char *resp_pipe_path)
-// {
-//   ClientsInSession *temp = head;
-//   while (temp != NULL)
-//   {
-//     if (strcmp(temp->resp_pipe_path, resp_pipe_path) == 0)
-//     {
-//       return temp;
-//     }
-//     temp = temp->next;
-//   }
-//   return NULL; // Client not found
-// }
