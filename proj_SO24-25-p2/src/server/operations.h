@@ -104,4 +104,8 @@ int kvs_unsubscribe(char notif_path[MAX_PIPE_PATH_LENGTH], char key[MAX_STRING_S
 
 Client *add_client_to_session(SessionData *session, const char *req_pipe_path, const char *resp_pipe_path, const char *notif_pipe_path, int indexClient);
 int remove_client_from_session(SessionData *session, const char *req_pipe_path);
+int remove_all_clients(SessionData *session);
+
+void delete_all_subscriptions();
+
 #endif // KVS_OPERATIONS_H

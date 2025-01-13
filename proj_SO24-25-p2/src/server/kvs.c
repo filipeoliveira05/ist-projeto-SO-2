@@ -130,7 +130,7 @@ int delete_pair(HashTable *ht, const char *key)
         prevNode->next =
             keyNode->next; // Link the previous node to the next node
       }
-      delete_all_subscriptions(keyNode);
+      delete_all_subscriptions_of_key(keyNode);
 
       // Free the memory allocated for the key and value
       free(keyNode->key);
@@ -145,7 +145,7 @@ int delete_pair(HashTable *ht, const char *key)
   return 1;
 }
 
-void delete_all_subscriptions(KeyNode *key_node)
+void delete_all_subscriptions_of_key(KeyNode *key_node)
 {
   if (key_node == NULL)
   {
@@ -173,6 +173,7 @@ void free_table(HashTable *ht)
     {
       KeyNode *temp = keyNode;
       keyNode = keyNode->next;
+      delete_all_subscriptions_of_key(temp);
       free(temp->key);
       free(temp->value);
       free(temp);

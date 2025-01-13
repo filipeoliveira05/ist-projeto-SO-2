@@ -578,6 +578,24 @@ int remove_all_clients(SessionData *session) {
   }
 
   printf("All clients removed. Active clients: %d\n", session->activeClients);
+  return 0; // Success
+}
+
+void delete_all_subscriptions() {
+  pthread_rwlock_wrlock(&kvs_table->tablelock);
+
+  for (int i = 0; i < TABLE_SIZE; i++)
+  {
+    KeyNode *currentKeyNode = kvs_table->table[i];
+
+    while (currentKeyNode != NULL)
+    {
+      delete_all_subscriptions_of_key(currentKeyNode);
+      currentKeyNode = currentKeyNode->next;
+    }
+  }
+
+  pthread_rwlock_unlock(&kvs_table->tablelock);
 }
 
 // ClientsInSession *find_client(ClientsInSession *head, const char *resp_pipe_path)

@@ -54,7 +54,7 @@ KeyNode *find_key(HashTable *ht, const char *key);
 /// @return 0 if the node was deleted successfully, 1 otherwise.
 int delete_pair(HashTable *ht, const char *key);
 
-void delete_all_subscriptions(KeyNode *key_node);
+void delete_all_subscriptions_of_key(KeyNode *key_node);
 
 /// Frees the hashtable.
 /// @param ht Hash table to be deleted.

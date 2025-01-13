@@ -37,10 +37,25 @@ sem_t client_thread_semaphore;
 
 atomic_int sigusr1_received = 0;
 
+int function (int a) {
+  a++;
+  return a;
+}
+
 void handler_sigusr1(int signo) {
     // Modifica o valor atômico para indicar que o sinal foi recebido
     atomic_store(&sigusr1_received, 1);
     printf("SIGUSR1 signal received.\n");
+    remove_all_clients(sessionData); //Remove todos os clientes da sessão
+    delete_all_subscriptions(); // Remove todas as subscrições da tabela 
+      
+    // Deixar as tarefas prontas para atender novos clientes
+    atomic_store(&sigusr1_received, 0);
+    /*
+    int a = 2;
+    int result = function(a);
+    printf("%d", result);
+    */
 }
 
 void setup_signal_handler() {
@@ -66,6 +81,18 @@ void block_sigusr1() {
         exit(EXIT_FAILURE);
     }
 }
+
+  /*
+  // Verifica se o sinal SIGUSR1 foi recebido
+  if (atomic_load(&sigusr1_received) == 1) {
+    
+    remove_all_clients(sessionData); //Remove todos os clientes da sessão
+    delete_all_subscriptions(); // Remove todas as subscrições da tabela 
+      
+    // Deixar as tarefas prontas para atender novos clientes
+    atomic_store(&sigusr1_received, 0); // Resetar o sinal para permitir novos "refreshes"
+  }
+*/
 
 /**
  * helper function to send messages
@@ -536,20 +563,9 @@ void *handle_server_pipe(void *arg)
   sem_init(&client_thread_semaphore, 0, MAX_SESSION_COUNT);
   pthread_t client_threads[MAX_SESSION_COUNT];
   int active_thread_count = 0;
+  setup_signal_handler();
   while (1)
   {
-    /*
-    // Verifica se o sinal SIGUSR1 foi recebido
-    if (atomic_load(&sigusr1_received) == 1) {
-      
-      remove_all_clients(sessionData);
-      delete_all_subscriptions();
-        
-      // Deixar as tarefas prontas para atender novos clientes
-      atomic_store(&sigusr1_received, 0); // Resetar o sinal para permitir novos "refreshes"
-    }
-    */
-
     ssize_t bytes_read = read(server_pipe_fd, buf, 1 + (MAX_PIPE_PATH_LENGTH * 3));
     if (bytes_read <= 0)
     {
