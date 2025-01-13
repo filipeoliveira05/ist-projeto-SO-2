@@ -10,6 +10,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <errno.h>
+#include <stdatomic.h>
 
 #include "constants.h"
 #include "../common/constants.h"
@@ -33,6 +34,38 @@ int server_pipe_fd;
 
 int indexClientCount = 0;
 sem_t client_thread_semaphore;
+
+atomic_int sigusr1_received = 0;
+
+void handler_sigusr1(int signo) {
+    // Modifica o valor atômico para indicar que o sinal foi recebido
+    atomic_store(&sigusr1_received, 1);
+    printf("SIGUSR1 signal received.\n");
+}
+
+void setup_signal_handler() {
+    struct sigaction sa;
+    sa.sa_handler = handler_sigusr1;
+    sa.sa_flags = SA_RESTART;  // Torna os sinais reiniciáveis (não bloqueia chamadas de sistema)
+    sigemptyset(&sa.sa_mask);   // Nenhum outro sinal será bloqueado durante o tratamento
+
+    // Registra o manipulador para SIGUSR1
+    if (sigaction(SIGUSR1, &sa, NULL) == -1) {
+        perror("sigaction failed");
+        exit(EXIT_FAILURE);
+    }
+}
+
+void block_sigusr1() {
+    sigset_t set;
+    sigemptyset(&set);
+    sigaddset(&set, SIGUSR1);
+
+    if (pthread_sigmask(SIG_BLOCK, &set, NULL) != 0) {
+        perror("pthread_sigmask");
+        exit(EXIT_FAILURE);
+    }
+}
 
 /**
  * helper function to send messages
@@ -505,6 +538,18 @@ void *handle_server_pipe(void *arg)
   int active_thread_count = 0;
   while (1)
   {
+    /*
+    // Verifica se o sinal SIGUSR1 foi recebido
+    if (atomic_load(&sigusr1_received) == 1) {
+      
+      remove_all_clients(sessionData);
+      delete_all_subscriptions();
+        
+      // Deixar as tarefas prontas para atender novos clientes
+      atomic_store(&sigusr1_received, 0); // Resetar o sinal para permitir novos "refreshes"
+    }
+    */
+
     ssize_t bytes_read = read(server_pipe_fd, buf, 1 + (MAX_PIPE_PATH_LENGTH * 3));
     if (bytes_read <= 0)
     {
@@ -535,23 +580,6 @@ void *handle_server_pipe(void *arg)
       // Print the updated available slots after acquiring the slot
       sem_getvalue(&client_thread_semaphore, &value);
       printf("Slots available after acquiring: %d\n", value);
-      
-      /*
-      //Join threads that have completed before spawning new ones
-      for (int i = 0; i < active_thread_count; i++)
-      {
-        if (pthread_join(client_threads[i], NULL) == 0)
-        {
-          // Shift remaining threads down
-          for (int j = i; j < active_thread_count - 1; j++)
-          {
-            client_threads[j] = client_threads[j + 1];
-          }
-          active_thread_count--;
-          i--; // Recheck the current index
-        }
-      }
-      */
       
       Client *client = add_client_to_session(sessionData, req_pipe_path, resp_pipe_path, notif_pipe_path, indexClientCount);
       if (client != NULL)

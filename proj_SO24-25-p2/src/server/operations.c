@@ -505,6 +505,8 @@ Client *add_client_to_session(SessionData *session, const char *req_pipe_path, c
   printf("Client added successfully. Active clients: %d\n", session->activeClients);
   return new_client_node->Client; // Success
 }
+
+
 // Function to remove a client from the session by req_pipe_path
 int remove_client_from_session(SessionData *session, const char *req_pipe_path)
 {
@@ -556,6 +558,26 @@ int remove_client_from_session(SessionData *session, const char *req_pipe_path)
   // If no client with the given req_pipe_path was found
   printf("Error: Client with req_pipe_path '%s' not found.\n", req_pipe_path);
   return -1; // Client not found
+}
+
+int remove_all_clients(SessionData *session) {
+  // Check if the session is empty
+  if (session->head == NULL)
+  {
+    printf("Error: No clients in the session.\n");
+    return -1; // No clients to remove
+  }
+    
+  ClientsInSession *current = session->head;
+  ClientsInSession *next;
+
+  while (current != NULL) {
+      next = current->next;
+      remove_client_from_session(session, current->Client->req_pipe_path);
+      current = next;
+  }
+
+  printf("All clients removed. Active clients: %d\n", session->activeClients);
 }
 
 // ClientsInSession *find_client(ClientsInSession *head, const char *resp_pipe_path)
