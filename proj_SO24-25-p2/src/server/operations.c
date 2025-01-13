@@ -55,7 +55,6 @@ int kvs_write(size_t num_pairs, char keys[][MAX_STRING_SIZE],
     fprintf(stderr, "KVS state must be initialized\n");
     return 1;
   }
-
   pthread_rwlock_wrlock(&kvs_table->tablelock);
 
   for (size_t i = 0; i < num_pairs; i++)
@@ -151,8 +150,6 @@ int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE], int fd)
     return 1;
   }
 
-  pthread_rwlock_wrlock(&kvs_table->tablelock);
-
   int aux = 0;
   for (size_t i = 0; i < num_pairs; i++)
   {
@@ -189,6 +186,7 @@ int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE], int fd)
         client = client->next;
       }
     }
+    pthread_rwlock_wrlock(&kvs_table->tablelock);
 
     if (delete_pair(kvs_table, keys[i]) != 0)
     {

@@ -161,6 +161,7 @@ int kvs_disconnect(Client *client)
   // fprintf(stderr, "Closing pipes...\n");
 
   close(client->req_pipe);
+  fprintf(stderr, "REQ PATH: %s\n", client->req_pipe_path);
   close(client->resp_pipe);
   close(client->notif_pipe);
   cleanup_fifos(client->req_pipe_path, client->req_pipe_path, client->notif_pipe_path);

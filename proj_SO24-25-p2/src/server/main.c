@@ -351,23 +351,24 @@ void *handle_requests(void *arg)
         ssize_t bytes_written = write(client->resp_pipe, response_code, 2);
         if (bytes_written < 2)
         {
-          perror("Verify_requests: Failed to write subscribe response to response pipe");
+          perror("Verify_requests: Failed to write Disconect response to response pipe");
         }
         else
         {
-          fprintf(stderr, "Verify_requests: Subscribe response successfully sent for key: %s\n", key);
+          fprintf(stderr, "Verify_requests: Disconect response successfully sent for key: %s\n", key);
           if (disconect_result)
           {
-            fprintf(stderr, "Verify_requests: Subscription Successfull\n");
+            fprintf(stderr, "Verify_requests: Disconection Successfull\n");
           }
           else
           {
-            fprintf(stderr, "Verify_requests: Subscription Failed\n");
+            fprintf(stderr, "Verify_requests: Disconection Failed\n");
           }
         }
         close(client->resp_pipe);
       }
       fprintf(stderr, "Verify_requests: Disconnect response sent.\n");
+      return NULL; // Exit the thread completely
     }
 
     if (bytes_read > 0)
@@ -390,24 +391,24 @@ void *handle_requests(void *arg)
           ssize_t bytes_written = write(client->resp_pipe, response_code, 2);
           if (bytes_written < 2)
           {
-            perror("Verify_requests: Failed to write subscribe response to response pipe");
+            perror("Verify_requests: Failed to write disconect response to response pipe");
           }
           else
           {
-            fprintf(stderr, "Verify_requests: Subscribe response successfully sent for key: %s\n", key);
+            fprintf(stderr, "Verify_requests: Disconect response successfully sent for key: %s\n", key);
             if (disconect_result)
             {
-              fprintf(stderr, "Verify_requests: Subscription Successfull\n");
+              fprintf(stderr, "Verify_requests: Disconection Successfull\n");
             }
             else
             {
-              fprintf(stderr, "Verify_requests: Subscription Failed\n");
+              fprintf(stderr, "Verify_requests: Disconection Failed\n");
             }
           }
           close(client->resp_pipe);
         }
         fprintf(stderr, "Verify_requests: Disconnect response sent.\n");
-        break;
+        return NULL; // Exit the thread completely
 
       case '3':
         strcpy(key, buf + 1);
@@ -499,6 +500,10 @@ void *handle_server_pipe(void *arg)
   while (1)
   {
     ssize_t bytes_read = read(server_pipe_fd, buf, 1 + (MAX_PIPE_PATH_LENGTH * 3));
+    if (bytes_read <= 0)
+    {
+      continue; // Skip if no data read
+    }
     if (buf[0] == '1')
     {
       memcpy(req_pipe_path, buf + 1, MAX_PIPE_PATH_LENGTH);
@@ -511,30 +516,30 @@ void *handle_server_pipe(void *arg)
       memcpy(notif_pipe_path, buf + 1 + 2 * MAX_PIPE_PATH_LENGTH, MAX_PIPE_PATH_LENGTH);
       printf("notif_pipe_path: %s\n", notif_pipe_path); // Print to verify
 
-      int value;
-      sem_getvalue(&client_thread_semaphore, &value);
-      printf("Slots available before acquiring: %d\n", value);
+      // int value;
+      // sem_getvalue(&client_thread_semaphore, &value);
+      // printf("Slots available before acquiring: %d\n", value);
 
-      // Wait for a slot to handle the client (using semaphore)
-      sem_wait(&client_thread_semaphore); // Block if no available threads
+      // // Wait for a slot to handle the client (using semaphore)
+      // sem_wait(&client_thread_semaphore); // Block if no available threads
 
-      // Print the updated available slots after acquiring the slot
-      sem_getvalue(&client_thread_semaphore, &value);
-      printf("Slots available after acquiring: %d\n", value);
+      // // Print the updated available slots after acquiring the slot
+      // sem_getvalue(&client_thread_semaphore, &value);
+      // printf("Slots available after acquiring: %d\n", value);
       // Join threads that have completed before spawning new ones
-      // for (int i = 0; i < active_thread_count; i++)
-      // {
-      //   if (pthread_join(client_threads[i], NULL) == 0)
-      //   {
-      //     // Shift remaining threads down
-      //     for (int j = i; j < active_thread_count - 1; j++)
-      //     {
-      //       client_threads[j] = client_threads[j + 1];
-      //     }
-      //     active_thread_count--;
-      //     i--; // Recheck the current index
-      //   }
-      // }
+      for (int i = 0; i < active_thread_count; i++)
+      {
+        if (pthread_join(client_threads[i], NULL) == 0)
+        {
+          // Shift remaining threads down
+          for (int j = i; j < active_thread_count - 1; j++)
+          {
+            client_threads[j] = client_threads[j + 1];
+          }
+          active_thread_count--;
+          i--; // Recheck the current index
+        }
+      }
       Client *client = add_client_to_session(sessionData, req_pipe_path, resp_pipe_path, notif_pipe_path, indexClientCount);
       if (client != NULL)
       {
@@ -554,7 +559,7 @@ void *handle_server_pipe(void *arg)
         client->req_pipe = open(client->req_pipe_path, O_RDONLY);
         // pthread_t thread_request_pipe;
         pthread_create(&client_threads[active_thread_count++], NULL, handle_requests, client);
-        // pthread_join(thread_request_pipe, NULL);
+        // pthread_join(&client_threads[active_thread_count], NULL);
       }
     }
     else
@@ -562,6 +567,7 @@ void *handle_server_pipe(void *arg)
       strncpy(resp_pipe_path, buf + 1 + MAX_PIPE_PATH_LENGTH, MAX_PIPE_PATH_LENGTH);
       resp_pipe_fd = open(resp_pipe_path, O_WRONLY);
       write(resp_pipe_fd, "1", 1);
+      // return NULL;
     }
     close(resp_pipe_fd);
   }
