@@ -431,9 +431,9 @@ int kvs_unsubscribe(char notif_path[MAX_PIPE_PATH_LENGTH], char key[MAX_STRING_S
 }
 
 // Function to add a client to the session
-Client *add_client_to_session(SessionData *session, const char *req_pipe_path, const char *resp_pipe_path, const char *notif_pipe_path, int indexClient)
+Client *add_client_to_session(SessionData *session, const char *req_pipe_path, const char *resp_pipe_path, const char *notif_pipe_path, int indexClient, int thread_slot)
 {
-  printf("SESSION ACTIVE CLIENT BEFORE: %d", session->activeClients);
+  printf("SESSION ACTIVE CLIENT BEFORE: %d\n", session->activeClients);
   // Check if the session has room for another client (max of 10 clients)
   if (session->activeClients >= MAX_SESSION_COUNT)
   {
@@ -478,6 +478,7 @@ Client *add_client_to_session(SessionData *session, const char *req_pipe_path, c
 
   // Assign placeholder values for the pipe file descriptors
   new_client_node->Client->client_Index = indexClient + 1;
+  new_client_node->Client->thread_slot = thread_slot;
   new_client_node->Client->req_pipe = -1;
   new_client_node->Client->resp_pipe = -1;
   new_client_node->Client->notif_pipe = -1;
@@ -505,7 +506,6 @@ Client *add_client_to_session(SessionData *session, const char *req_pipe_path, c
   printf("Client added successfully. Active clients: %d\n", session->activeClients);
   return new_client_node->Client; // Success
 }
-
 
 // Function to remove a client from the session by req_pipe_path
 int remove_client_from_session(SessionData *session, const char *req_pipe_path)
@@ -555,33 +555,38 @@ int remove_client_from_session(SessionData *session, const char *req_pipe_path)
     current = current->next;
   }
 
+  printf("ACTIVE SESSION CLIENTS %d\n", session->activeClients);
+
   // If no client with the given req_pipe_path was found
   printf("Error: Client with req_pipe_path '%s' not found.\n", req_pipe_path);
   return -1; // Client not found
 }
 
-int remove_all_clients(SessionData *session) {
+int remove_all_clients(SessionData *session)
+{
   // Check if the session is empty
   if (session->head == NULL)
   {
     printf("Error: No clients in the session.\n");
     return -1; // No clients to remove
   }
-    
+
   ClientsInSession *current = session->head;
   ClientsInSession *next;
 
-  while (current != NULL) {
-      next = current->next;
-      remove_client_from_session(session, current->Client->req_pipe_path);
-      current = next;
+  while (current != NULL)
+  {
+    next = current->next;
+    remove_client_from_session(session, current->Client->req_pipe_path);
+    current = next;
   }
 
   printf("All clients removed. Active clients: %d\n", session->activeClients);
   return 0; // Success
 }
 
-void delete_all_subscriptions() {
+void delete_all_subscriptions()
+{
   pthread_rwlock_wrlock(&kvs_table->tablelock);
 
   for (int i = 0; i < TABLE_SIZE; i++)

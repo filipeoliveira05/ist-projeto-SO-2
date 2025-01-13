@@ -18,6 +18,7 @@ typedef struct SharedData
 typedef struct Client
 {
   int client_Index;
+  int thread_slot;
   char *req_pipe_path;
   char *resp_pipe_path;
   char *notif_pipe_path;
@@ -102,7 +103,7 @@ int kvs_disconnect_client(const char *notif_pipe_path);
 int kvs_subscribe(char notif_path[MAX_PIPE_PATH_LENGTH], char key[MAX_STRING_SIZE]);
 int kvs_unsubscribe(char notif_path[MAX_PIPE_PATH_LENGTH], char key[MAX_STRING_SIZE]);
 
-Client *add_client_to_session(SessionData *session, const char *req_pipe_path, const char *resp_pipe_path, const char *notif_pipe_path, int indexClient);
+Client *add_client_to_session(SessionData *session, const char *req_pipe_path, const char *resp_pipe_path, const char *notif_pipe_path, int indexClient, int thread_slot);
 int remove_client_from_session(SessionData *session, const char *req_pipe_path);
 int remove_all_clients(SessionData *session);
 

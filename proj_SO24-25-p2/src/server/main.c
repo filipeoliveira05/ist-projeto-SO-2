@@ -32,66 +32,75 @@ char register_FIFO_name[256];
 char *jobs_directory = NULL;
 int server_pipe_fd;
 
+pthread_t client_threads[MAX_SESSION_COUNT];
+int thread_status[MAX_SESSION_COUNT] = {0}; // 0: free, 1: in use
+
 int indexClientCount = 0;
 sem_t client_thread_semaphore;
 
 atomic_int sigusr1_received = 0;
 
-int function (int a) {
+int function(int a)
+{
   a++;
   return a;
 }
 
-void handler_sigusr1(int signo) {
-    // Modifica o valor atômico para indicar que o sinal foi recebido
-    atomic_store(&sigusr1_received, 1);
-    printf("SIGUSR1 signal received.\n");
-    remove_all_clients(sessionData); //Remove todos os clientes da sessão
-    delete_all_subscriptions(); // Remove todas as subscrições da tabela 
-      
-    // Deixar as tarefas prontas para atender novos clientes
-    atomic_store(&sigusr1_received, 0);
-    /*
-    int a = 2;
-    int result = function(a);
-    printf("%d", result);
-    */
+// void handler_sigusr1(int signo)
+// {
+//   // Modifica o valor atômico para indicar que o sinal foi recebido
+//   atomic_store(&sigusr1_received, 1);
+//   printf("SIGUSR1 signal received.\n");
+//   remove_all_clients(sessionData); // Remove todos os clientes da sessão
+//   delete_all_subscriptions();      // Remove todas as subscrições da tabela
+
+//   // Deixar as tarefas prontas para atender novos clientes
+//   atomic_store(&sigusr1_received, 0);
+//   /*
+//   int a = 2;
+//   int result = function(a);
+//   printf("%d", result);
+//   */
+// }
+
+// void setup_signal_handler()
+// {
+//   struct sigaction sa;
+//   sa.sa_handler = handler_sigusr1;
+//   sa.sa_flags = SA_RESTART; // Torna os sinais reiniciáveis (não bloqueia chamadas de sistema)
+//   sigemptyset(&sa.sa_mask); // Nenhum outro sinal será bloqueado durante o tratamento
+
+//   // Registra o manipulador para SIGUSR1
+//   if (sigaction(SIGUSR1, &sa, NULL) == -1)
+//   {
+//     perror("sigaction failed");
+//     exit(EXIT_FAILURE);
+//   }
+// }
+
+// void block_sigusr1()
+// {
+//   sigset_t set;
+//   sigemptyset(&set);
+//   sigaddset(&set, SIGUSR1);
+
+//   if (pthread_sigmask(SIG_BLOCK, &set, NULL) != 0)
+//   {
+//     perror("pthread_sigmask");
+//     exit(EXIT_FAILURE);
+//   }
+// }
+
+/*
+// Verifica se o sinal SIGUSR1 foi recebido
+if (atomic_load(&sigusr1_received) == 1) {
+
+  remove_all_clients(sessionData); //Remove todos os clientes da sessão
+  delete_all_subscriptions(); // Remove todas as subscrições da tabela
+
+  // Deixar as tarefas prontas para atender novos clientes
+  atomic_store(&sigusr1_received, 0); // Resetar o sinal para permitir novos "refreshes"
 }
-
-void setup_signal_handler() {
-    struct sigaction sa;
-    sa.sa_handler = handler_sigusr1;
-    sa.sa_flags = SA_RESTART;  // Torna os sinais reiniciáveis (não bloqueia chamadas de sistema)
-    sigemptyset(&sa.sa_mask);   // Nenhum outro sinal será bloqueado durante o tratamento
-
-    // Registra o manipulador para SIGUSR1
-    if (sigaction(SIGUSR1, &sa, NULL) == -1) {
-        perror("sigaction failed");
-        exit(EXIT_FAILURE);
-    }
-}
-
-void block_sigusr1() {
-    sigset_t set;
-    sigemptyset(&set);
-    sigaddset(&set, SIGUSR1);
-
-    if (pthread_sigmask(SIG_BLOCK, &set, NULL) != 0) {
-        perror("pthread_sigmask");
-        exit(EXIT_FAILURE);
-    }
-}
-
-  /*
-  // Verifica se o sinal SIGUSR1 foi recebido
-  if (atomic_load(&sigusr1_received) == 1) {
-    
-    remove_all_clients(sessionData); //Remove todos os clientes da sessão
-    delete_all_subscriptions(); // Remove todas as subscrições da tabela 
-      
-    // Deixar as tarefas prontas para atender novos clientes
-    atomic_store(&sigusr1_received, 0); // Resetar o sinal para permitir novos "refreshes"
-  }
 */
 
 /**
@@ -390,50 +399,22 @@ void *handle_requests(void *arg)
     return NULL;
   }
   fprintf(stderr, "Verify_requests: Waiting for requests.\n");
-  int resp_pipe_fd = -1;
 
   while (1)
   {
 
     ssize_t bytes_read = read(client->req_pipe, buf, sizeof(buf));
 
-    if (bytes_read == 0)
+    if (bytes_read <= 0)
     {
-      fprintf(stderr, "Verify_requests: Disconnect request received.\n");
-      int disconect_result = kvs_disconnect_client(client->notif_pipe_path);
-      client->resp_pipe = open(client->resp_pipe_path, O_WRONLY);
-      if (client->resp_pipe == -1)
-      {
-        perror("Verify_requests: Failed to open response pipe for writing");
-      }
-      else
-      {
-        const char *response_code = (disconect_result == 1) ? "20" : "21"; // "20" for success, "21" for failure
-        ssize_t bytes_written = write(client->resp_pipe, response_code, 2);
-        if (bytes_written < 2)
-        {
-          perror("Verify_requests: Failed to write Disconect response to response pipe");
-        }
-        else
-        {
-          fprintf(stderr, "Verify_requests: Disconect response successfully sent for key: %s\n", key);
-          if (disconect_result)
-          {
-            fprintf(stderr, "Verify_requests: Disconection Successfull\n");
-          }
-          else
-          {
-            fprintf(stderr, "Verify_requests: Disconection Failed\n");
-          }
-        }
-        close(client->resp_pipe);
-      }
-      fprintf(stderr, "Verify_requests: Disconnect response sent.\n");
+      printf("DISCONECT POR CNTRL C\n");
+      fprintf(stderr, "Verify_requests: Unespected Disconect.\n");
+      thread_status[client->thread_slot] = 0; // updates thread status to avaliable
+      kvs_disconnect_client(client->notif_pipe_path);
       remove_client_from_session(sessionData, client->req_pipe_path);
       sem_post(&client_thread_semaphore);
       return NULL; // Exit the thread completely
     }
-
     if (bytes_read > 0)
     {
       buf[bytes_read] = '\0'; // Null-terminate for safe string operations
@@ -470,6 +451,7 @@ void *handle_requests(void *arg)
           }
           close(client->resp_pipe);
         }
+        thread_status[client->thread_slot] = 0; // updates thread status to avaliable
         fprintf(stderr, "Verify_requests: Disconnect response sent.\n");
         remove_client_from_session(sessionData, client->req_pipe_path);
         sem_post(&client_thread_semaphore);
@@ -550,20 +532,31 @@ void *handle_requests(void *arg)
   }
 }
 
-void *handle_server_pipe(void *arg)
+int find_free_thread_slot()
 {
-  SessionData *sessionData = (SessionData *)arg; // Cast back to Session data *
+  for (int i = 0; i < MAX_SESSION_COUNT; i++)
+  {
+    if (thread_status[i] == 0)
+    {
+      return i;
+    }
+  }
+  return -1; // No free slot available
+}
+
+void *handle_server_pipe()
+{
   char req_pipe_path[MAX_PIPE_PATH_LENGTH];
   char resp_pipe_path[MAX_PIPE_PATH_LENGTH];
   char notif_pipe_path[MAX_PIPE_PATH_LENGTH];
   char buf[MAX_PIPE_BUFFER_SIZE];
+
+  memset(thread_status, 0, sizeof(thread_status));
+
   int resp_pipe_fd;
-  int req_pipe_fd;
   server_pipe_fd = open(register_FIFO_name, O_RDONLY);
   sem_init(&client_thread_semaphore, 0, MAX_SESSION_COUNT);
-  pthread_t client_threads[MAX_SESSION_COUNT];
-  int active_thread_count = 0;
-  setup_signal_handler();
+  // setup_signal_handler();
   while (1)
   {
     ssize_t bytes_read = read(server_pipe_fd, buf, 1 + (MAX_PIPE_PATH_LENGTH * 3));
@@ -574,8 +567,8 @@ void *handle_server_pipe(void *arg)
     if (buf[0] == OP_CODE_CONNECT)
     {
       memcpy(req_pipe_path, buf + 1, MAX_PIPE_PATH_LENGTH);
-      printf("CLIENT %c CONECTED\n", req_pipe_path[strlen(req_pipe_path) - 1]); // Print to verify
-      printf("req_pipe_path: %s\n", req_pipe_path);                             // Print to verify
+      printf("CLIENT %d CONECTED\n", indexClientCount + 1); // Print to verify
+      printf("req_pipe_path: %s\n", req_pipe_path);         // Print to verify
 
       memcpy(resp_pipe_path, buf + 1 + MAX_PIPE_PATH_LENGTH, MAX_PIPE_PATH_LENGTH);
       printf("resp_pipe_path: %s\n", resp_pipe_path); // Print to verify
@@ -588,7 +581,8 @@ void *handle_server_pipe(void *arg)
       printf("Slots available before acquiring: %d\n", value);
 
       // Wait for a slot to handle the client (using semaphore)
-      if (value <= 0) {
+      if (value <= 0)
+      {
         printf("Waiting for thread to be available\n");
       }
       sem_wait(&client_thread_semaphore); // Block if no available threads
@@ -596,8 +590,14 @@ void *handle_server_pipe(void *arg)
       // Print the updated available slots after acquiring the slot
       sem_getvalue(&client_thread_semaphore, &value);
       printf("Slots available after acquiring: %d\n", value);
-      
-      Client *client = add_client_to_session(sessionData, req_pipe_path, resp_pipe_path, notif_pipe_path, indexClientCount);
+
+      int free_slot = find_free_thread_slot();
+      if (free_slot == -1)
+      {
+        fprintf(stderr, "Server: No available thread slots for new client.\n");
+        continue;
+      }
+      Client *client = add_client_to_session(sessionData, req_pipe_path, resp_pipe_path, notif_pipe_path, indexClientCount, free_slot);
       if (client != NULL)
       {
         indexClientCount++;
@@ -614,18 +614,25 @@ void *handle_server_pipe(void *arg)
         write(client->resp_pipe, "0", 1);
 
         client->req_pipe = open(client->req_pipe_path, O_RDONLY);
-        pthread_create(&client_threads[active_thread_count++], NULL, handle_requests, client);
-      
-      } else {
+
+        thread_status[free_slot] = 1;
+
+        printf("SLOT LIVRE PARA NOVA THREAD: %d\n", free_slot);
+        pthread_create(&client_threads[free_slot], NULL, handle_requests, client);
+      }
+      else
+      {
         sem_post(&client_thread_semaphore); // Libera slot caso falhe
       }
-    } else {
-        strncpy(resp_pipe_path, buf + 1 + MAX_PIPE_PATH_LENGTH, MAX_PIPE_PATH_LENGTH);
-        resp_pipe_fd = open(resp_pipe_path, O_WRONLY);
-        write(resp_pipe_fd, "1", 1);
-        close(resp_pipe_fd);
     }
-}
+    else
+    {
+      strncpy(resp_pipe_path, buf + 1 + MAX_PIPE_PATH_LENGTH, MAX_PIPE_PATH_LENGTH);
+      resp_pipe_fd = open(resp_pipe_path, O_WRONLY);
+      write(resp_pipe_fd, "1", 1);
+      close(resp_pipe_fd);
+    }
+  }
   sem_destroy(&client_thread_semaphore);
 }
 
@@ -657,7 +664,7 @@ static void dispatch_threads(DIR *dir)
   // ler do FIFO de registo
 
   pthread_t thread_server_pipe;
-  pthread_create(&thread_server_pipe, NULL, handle_server_pipe, (void *)sessionData);
+  pthread_create(&thread_server_pipe, NULL, handle_server_pipe, NULL);
 
   pthread_join(thread_server_pipe, NULL);
 
