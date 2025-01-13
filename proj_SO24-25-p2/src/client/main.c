@@ -44,7 +44,7 @@ void print_stdout(char operation_char, char response_code)
   case '4':
     strcpy(operation, "unsubscribe");
     break;
-  default: // TODO erro
+  default:
     break;
   }
   fprintf(stdout, "Server returned %c for operation: %s\n", response_code, operation);
@@ -60,19 +60,19 @@ void *process_stdin(void *arg)
 
   while (1)
   {
-    fprintf(stdout, "%s", ">>");
+    // fprintf(stdout, "%s", ">>");
     fflush(stdout);
     switch (get_next(STDIN_FILENO))
     {
     case CMD_DISCONNECT:
       if (kvs_disconnect(client))
       {
-        fprintf(stderr, "Failed to disconnect to the server\n");
+        // fprintf(stderr, "Failed to disconnect to the server\n");
         print_stdout('2', '1');
         return NULL;
       }
       print_stdout('2', '0');
-      printf("Disconnected from server\n");
+      // printf("Disconnected from server\n");
       return NULL;
 
     case CMD_SUBSCRIBE:
@@ -80,14 +80,15 @@ void *process_stdin(void *arg)
       if (num == 0)
       {
         print_stdout('3', '1');
-        fprintf(stderr, "Invalid command. See HELP for usage\n");
+        // fprintf(stderr, "Invalid command. See HELP for usage\n");
         continue;
       }
 
       if (!kvs_subscribe(keys[0], client))
       {
         print_stdout('3', '1');
-        fprintf(stderr, "Command subscribe failed\n");
+        // fprintf(stderr, "Command subscribe failed\n");
+        continue;
       }
       print_stdout('3', '0');
 
@@ -98,14 +99,14 @@ void *process_stdin(void *arg)
       if (num == 0)
       {
         print_stdout('4', '1');
-        fprintf(stderr, "Invalid command. See HELP for usage\n");
+        // fprintf(stderr, "Invalid command. See HELP for usage\n");
         continue;
       }
 
       if (kvs_unsubscribe(keys[0], client))
       {
         print_stdout('4', '1');
-        fprintf(stderr, "Command unsubscribe failed\n");
+        // fprintf(stderr, "Command unsubscribe failed\n");
       }
 
       print_stdout('4', '0');
@@ -114,13 +115,13 @@ void *process_stdin(void *arg)
     case CMD_DELAY:
       if (parse_delay(STDIN_FILENO, &delay_ms) == -1)
       {
-        fprintf(stderr, "Invalid command. See HELP for usage\n");
+        // fprintf(stderr, "Invalid command. See HELP for usage\n");
         continue;
       }
 
       if (delay_ms > 0)
       {
-        printf("Waiting...\n");
+        // printf("Waiting...\n");
         delay(delay_ms);
       }
       break;
@@ -185,14 +186,12 @@ int main(int argc, char *argv[])
   // Permite ao cliente receber notificações
   initializesClient(req_pipe_path, resp_pipe_path, notif_pipe_path, server_pipe_path, argv, client);
 
-  fprintf(stderr, "Conecting...\n");
-  // TODO open pipes
-  if (kvs_connect(client->req_pipe_path, client->resp_pipe_path, client->server_pipe_path, client->notif_pipe_path, client) != 0)
+    if (kvs_connect(client->req_pipe_path, client->resp_pipe_path, client->server_pipe_path, client->notif_pipe_path, client) != 0)
   {
     fprintf(stderr, "Failed to connect to the server\n");
     return 1;
   }
-  fprintf(stderr, "Conected Successfully\n");
+  // fprintf(stderr, "Conected Successfully\n");
 
   pthread_t threads[2];
   pthread_create(&threads[0], NULL, process_stdin, (void *)client);

@@ -15,7 +15,6 @@ typedef struct Client
     int resp_pipe;
     int notif_pipe;
     int server_pipe;
-    // Pointer to the next client
 } Client;
 
 /// Connects to a kvs server.

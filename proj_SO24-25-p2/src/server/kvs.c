@@ -130,6 +130,8 @@ int delete_pair(HashTable *ht, const char *key)
         prevNode->next =
             keyNode->next; // Link the previous node to the next node
       }
+      delete_all_subscriptions(keyNode);
+
       // Free the memory allocated for the key and value
       free(keyNode->key);
       free(keyNode->value);
@@ -141,6 +143,25 @@ int delete_pair(HashTable *ht, const char *key)
   }
 
   return 1;
+}
+
+void delete_all_subscriptions(KeyNode *key_node)
+{
+  if (key_node == NULL)
+  {
+    return;
+  }
+
+  ClientSubscribed *current = key_node->Head;
+  while (current != NULL)
+  {
+    ClientSubscribed *next = current->next;
+    free(current);  // Free the memory for the current client
+    current = next; // Move to the next client
+  }
+
+  key_node->Head = NULL;   // Set the head to NULL after all clients are deleted
+  key_node->n_clients = 0; // Reset the client count
 }
 
 void free_table(HashTable *ht)

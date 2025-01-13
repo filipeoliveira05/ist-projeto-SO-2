@@ -29,7 +29,7 @@ void cleanup_fifos(const char *req_pipe_path, const char *resp_pipe_path, const 
     perror("Failed to unlink notification FIFO");
     return;
   }
-  fprintf(stderr, "Cleaned up FIFOs.\n");
+  // fprintf(stderr, "Cleaned up FIFOs.\n");
 }
 
 int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path, char const *server_pipe_path,
@@ -37,10 +37,10 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path, char cons
 {
 
   char buf[MAX_PIPE_BUFFER_SIZE];
-  fprintf(stderr, "Started cleanup of FIFOs\n");
+  // fprintf(stderr, "Started cleanup of FIFOs\n");
 
   cleanup_fifos(req_pipe_path, resp_pipe_path, notif_pipe_path);
-  fprintf(stderr, "Started making FIFOs\n");
+  // fprintf(stderr, "Started making FIFOs\n");
 
   if (mkfifo(req_pipe_path, 0640) != 0)
   {
@@ -61,8 +61,7 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path, char cons
   }
 
   // Debug: Confirm FIFOs are created
-  fprintf(stderr, "\n\nCreated FIFOs: \nRequest: %s\nResponse: %s\nNotification: %s\n\n",
-          req_pipe_path, resp_pipe_path, notif_pipe_path);
+  // fprintf(stderr, "\n\nCreated FIFOs: \nRequest: %s\nResponse: %s\nNotification: %s\n\n",req_pipe_path, resp_pipe_path, notif_pipe_path);
 
   // Prepare message to send to the server
   sprintf(buf, "1");
@@ -71,7 +70,7 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path, char cons
   memcpy(buf + 1 + 2 * MAX_PIPE_PATH_LENGTH, notif_pipe_path, MAX_PIPE_PATH_LENGTH);
 
   // Debug: Attempting to open server pipe
-  fprintf(stderr, "Opening server pipe: %s\n", server_pipe_path);
+  // fprintf(stderr, "Opening server pipe: %s\n", server_pipe_path);
 
   client->server_pipe = open(server_pipe_path, O_WRONLY);
   if (client->server_pipe == -1)
@@ -81,7 +80,7 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path, char cons
   }
 
   // Write the message to the server pipe
-  fprintf(stderr, "Writing to server pipe\n");
+  // fprintf(stderr, "Writing to server pipe\n");
   if (write(client->server_pipe, buf, 1 + MAX_PIPE_PATH_LENGTH * 3) == -1)
   {
     perror("Failed to write to server pipe");
@@ -89,7 +88,7 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path, char cons
   }
 
   // Open the response pipe
-  fprintf(stderr, "Opening response pipe: %s\n", resp_pipe_path);
+  // fprintf(stderr, "Opening response pipe: %s\n", resp_pipe_path);
   client->resp_pipe = open(resp_pipe_path, O_RDONLY);
   if (client->resp_pipe == -1)
   {
@@ -98,26 +97,26 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path, char cons
   }
 
   // Read response from the server
-  fprintf(stderr, "Reading from response pipe\n");
+  // fprintf(stderr, "Reading from response pipe\n");
   if (read(client->resp_pipe, buf, 1) <= 0)
   {
     perror("Failed to read from response pipe");
     return -1;
   }
   // Open the request pipe
-  fprintf(stderr, "Opening request pipe: %s\n", req_pipe_path);
+  // fprintf(stderr, "Opening request pipe: %s\n", req_pipe_path);
   client->req_pipe = open(req_pipe_path, O_RDWR); // Open for both read and write
   if (client->req_pipe == -1)
   {
     perror("Failed to open request pipe for reading and writing");
     return -1;
   }
-  fprintf(stderr, "Request pipe opened successfully.\n");
+  // fprintf(stderr, "Request pipe opened successfully.\n");
   // Parse the response
   int valor = buf[0] - '0';
 
   // Debug: Received response
-  fprintf(stderr, "Received response from server: %d\n", valor);
+  // fprintf(stderr, "Received response from server: %d\n", valor);
 
   return valor;
 }
@@ -127,13 +126,13 @@ int kvs_disconnect(Client *client)
 
   char buf[MAX_PIPE_BUFFER_SIZE];
 
-  fprintf(stderr, "Sending disconnect request...\n");
+  // fprintf(stderr, "Sending disconnect request...\n");
   if (write(client->req_pipe, "2", 1) == -1)
   {
     perror("Failed to write disconnect request to request pipe");
     return 1;
   }
-  fprintf(stderr, "Disconnect request sent.\n");
+  // fprintf(stderr, "Disconnect request sent.\n");
 
   ssize_t bytes_read = 0;
   do
@@ -151,7 +150,7 @@ int kvs_disconnect(Client *client)
   // Null-terminate the response to safely handle it as a string
   buf[2] = '\0';
 
-  fprintf(stderr, "Received response for disconect: %s\n", buf);
+  // fprintf(stderr, "Received response for disconect: %s\n", buf);
 
   if (buf[0] == '1')
   {
@@ -159,13 +158,13 @@ int kvs_disconnect(Client *client)
     return 1; // Handle error
   }
 
-  fprintf(stderr, "Closing pipes...\n");
+  // fprintf(stderr, "Closing pipes...\n");
 
   close(client->req_pipe);
   close(client->resp_pipe);
   close(client->notif_pipe);
   cleanup_fifos(client->req_pipe_path, client->req_pipe_path, client->notif_pipe_path);
-  fprintf(stderr, "Pipes closed and unlinked successfully.\n");
+  // fprintf(stderr, "Pipes closed and unlinked successfully.\n");
 
   return 0;
 }
@@ -176,7 +175,7 @@ int kvs_subscribe(const char *key, Client *client)
 
   // Prepare subscribe message
   snprintf(buf, sizeof(buf), "3%s", key);
-  fprintf(stderr, "Attempting to subscribe with key: %s\n", key);
+  // fprintf(stderr, "Attempting to subscribe with key: %s\n", key);
 
   // Send subscribe message to request pipe
   if (write(client->req_pipe, buf, strlen(buf)) == -1)
@@ -184,7 +183,7 @@ int kvs_subscribe(const char *key, Client *client)
     perror("Failed to write subscribe message to request pipe");
     return 1; // Error
   }
-  fprintf(stderr, "Subscribe message sent to request pipe: %s\n", buf);
+  // fprintf(stderr, "Subscribe message sent to request pipe: %s\n", buf);
   // Wait for response from response pipe
   ssize_t bytes_read = 0;
   do
@@ -202,15 +201,15 @@ int kvs_subscribe(const char *key, Client *client)
   // Null-terminate the response to safely handle it as a string
   buf[2] = '\0';
 
-  fprintf(stderr, "Received response for subscribe: %s\n", buf);
+  // fprintf(stderr, "Received response for subscribe: %s\n", buf);
   // Check response code
   if (buf[1] == '1')
   {
-    fprintf(stderr, "Subscribe failed for key: %s\n", key);
+    // fprintf(stderr, "Subscribe failed for key: %s\n", key);
     return 0; // Error
   }
 
-  fprintf(stderr, "Successfully subscribed to key: %s\n", key);
+  // fprintf(stderr, "Successfully subscribed to key: %s\n", key);
   return 1; // Success
 }
 
@@ -220,7 +219,7 @@ int kvs_unsubscribe(const char *key, Client *client)
 
   // Prepare unsubscribe message
   snprintf(buf, sizeof(buf), "4%s", key);
-  fprintf(stderr, "Attempting to unsubscribe with key: %s\n", key);
+  // fprintf(stderr, "Attempting to unsubscribe with key: %s\n", key);
 
   // Send unsubscribe message to request pipe
   if (write(client->req_pipe, buf, strlen(buf)) == -1)
@@ -228,7 +227,7 @@ int kvs_unsubscribe(const char *key, Client *client)
     perror("Failed to write unsubscribe message to request pipe");
     return 1; // Error
   }
-  fprintf(stderr, "Unsubscribe message sent to request pipe: %s\n", buf);
+  // fprintf(stderr, "Unsubscribe message sent to request pipe: %s\n", buf);
 
   // Wait for response from response pipe
   ssize_t bytes_read = 0;
@@ -247,14 +246,14 @@ int kvs_unsubscribe(const char *key, Client *client)
   // Null-terminate the response to safely handle it as a string
   buf[2] = '\0';
 
-  fprintf(stderr, "Received response for unsubscribe: %s\n", buf);
+  // fprintf(stderr, "Received response for unsubscribe: %s\n", buf);
   // Check response code
   if (buf[1] == '1')
   {
-    fprintf(stderr, "Unsubscribe failed for key: %s\n", key);
+    // fprintf(stderr, "Unsubscribe failed for key: %s\n", key);
     return 1; // Error
   }
 
-  fprintf(stderr, "Successfully unsubscribed from key: %s\n", key);
+  // fprintf(stderr, "Successfully unsubscribed from key: %s\n", key);
   return 0; // Success
 }

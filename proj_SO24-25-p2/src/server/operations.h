@@ -15,26 +15,29 @@ typedef struct SharedData
   pthread_mutex_t directory_mutex;
 } SharedData;
 
-typedef struct ClientsInSession
+typedef struct Client
 {
+  int client_Index;
   char *req_pipe_path;
   char *resp_pipe_path;
   char *notif_pipe_path;
-  char *server_pipe_path;
   int req_pipe;
   int resp_pipe;
   int notif_pipe;
-} ClientsInSession;
+} Client;
 
-typedef struct Subscription
+typedef struct ClientsInSession
 {
-} Subscription;
+  Client *Client;
+  struct ClientsInSession *next;
+
+} ClientsInSession;
 
 typedef struct SessionData
 {
-  Subscription subscription[26];
+  int activeClients;
   char *server_pipe_path;
-  ClientsInSession clientsInSession[MAX_SESSION_COUNT];
+  ClientsInSession *head;
 } SessionData;
 
 /// Initializes the KVS state.
@@ -97,4 +100,6 @@ int get_n_current_backups();
 int kvs_subscribe(char notif_path[MAX_PIPE_PATH_LENGTH], char key[MAX_STRING_SIZE]);
 int kvs_unsubscribe(char notif_path[MAX_PIPE_PATH_LENGTH], char key[MAX_STRING_SIZE]);
 
+Client *add_client_to_session(SessionData *session, const char *req_pipe_path, const char *resp_pipe_path, const char *notif_pipe_path, int indexClient);
+int remove_client_from_session(SessionData *session, const char *req_pipe_path);
 #endif // KVS_OPERATIONS_H

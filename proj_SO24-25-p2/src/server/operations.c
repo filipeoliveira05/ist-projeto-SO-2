@@ -289,6 +289,8 @@ void kvs_wait(unsigned int delay_ms)
   nanosleep(&delay, NULL);
 }
 
+int kvs_disconnect() {}
+
 int kvs_subscribe(char notif_path[MAX_PIPE_PATH_LENGTH], char key[MAX_STRING_SIZE])
 {
   KeyNode *key_node = find_key(kvs_table, key);
@@ -358,60 +360,133 @@ int kvs_unsubscribe(char notif_path[MAX_PIPE_PATH_LENGTH], char key[MAX_STRING_S
   return 0; // Failure: Client not found
 }
 
-// void add_client(ClientsInSession **head, const char *req_pipe_path, const char *resp_pipe_path, const char *notif_pipe_path)
-// {
-//   ClientsInSession *new_client = (ClientsInSession *)malloc(sizeof(ClientsInSession));
-//   if (!new_client)
-//   {
-//     perror("Failed to allocate memory for new client");
-//     return;
-//   }
-//   // Initialize the new client
-//   strncpy(new_client->req_pipe_path, req_pipe_path, MAX_PIPE_PATH_LENGTH);
-//   strncpy(new_client->resp_pipe_path, resp_pipe_path, MAX_PIPE_PATH_LENGTH);
-//   strncpy(new_client->notif_pipe_path, notif_pipe_path, MAX_PIPE_PATH_LENGTH);
-//   new_client->req_pipe = open(req_pipe_path, O_RDWR);
-//   new_client->resp_pipe = open(resp_pipe_path, O_RDONLY);
-//   new_client->notif_pipe = open(notif_pipe_path, O_RDONLY);
-//   new_client->next = *head; // Add to the front of the list
+// Function to add a client to the session
+Client *add_client_to_session(SessionData *session, const char *req_pipe_path, const char *resp_pipe_path, const char *notif_pipe_path, int indexClient)
+{
+  printf("SESSION ACTIVE CLIENT BEFORE: %d", session->activeClients);
+  // Check if the session has room for another client (max of 10 clients)
+  if (session->activeClients >= MAX_SESSION_COUNT)
+  {
+    printf("Error: Session is full. Cannot add more clients.\n");
+    return NULL; // Return an error code if no space is available
+  }
 
-//   *head = new_client;
-// }
+  // Allocate memory for the new client and the linked list node
+  ClientsInSession *new_client_node = (ClientsInSession *)malloc(sizeof(ClientsInSession));
+  if (new_client_node == NULL)
+  {
+    printf("Error: Failed to allocate memory for new client node.\n");
+    return NULL; // Memory allocation failure
+  }
 
-// void remove_client(ClientsInSession **head, const char *notif_pipe_path)
-// {
-//   ClientsInSession *temp = *head;
-//   ClientsInSession *prev = NULL;
+  new_client_node->Client = (Client *)malloc(sizeof(Client));
+  if (new_client_node->Client == NULL)
+  {
+    printf("Error: Failed to allocate memory for new client structure.\n");
+    free(new_client_node); // Clean up partially allocated node
+    return NULL;           // Memory allocation failure
+  }
 
-//   // Search for the client with the given notif_pipe_path
-//   while (temp != NULL && strcmp(temp->notif_pipe_path, notif_pipe_path) != 0)
-//   {
-//     prev = temp;
-//     temp = temp->next;
-//   }
+  // Assign pipe paths to the new client
+  new_client_node->Client->req_pipe_path = strdup(req_pipe_path);     // Copy the string
+  new_client_node->Client->resp_pipe_path = strdup(resp_pipe_path);   // Copy the string
+  new_client_node->Client->notif_pipe_path = strdup(notif_pipe_path); // Copy the string
 
-//   // Client not found
-//   if (temp == NULL)
-//   {
-//     return;
-//   }
+  // Check for memory allocation failures for strdup
+  if (new_client_node->Client->req_pipe_path == NULL ||
+      new_client_node->Client->resp_pipe_path == NULL ||
+      new_client_node->Client->notif_pipe_path == NULL)
+  {
+    printf("Error: Failed to allocate memory for client pipe paths.\n");
+    free(new_client_node->Client->req_pipe_path);
+    free(new_client_node->Client->resp_pipe_path);
+    free(new_client_node->Client->notif_pipe_path);
+    free(new_client_node->Client);
+    free(new_client_node);
+    return NULL;
+  }
 
-//   // Remove the client from the list
-//   if (prev == NULL)
-//   {
-//     *head = temp->next;
-//   }
-//   else
-//   {
-//     prev->next = temp->next;
-//   }
-//   // Close the pipes and free the memory
-//   close(temp->req_pipe);
-//   close(temp->resp_pipe);
-//   close(temp->notif_pipe);
-//   cleanup_fifos(temp->req_pipe_path, temp->req_pipe_path, temp->notif_pipe_path);
-//   free(temp);
-// }
+  // Assign placeholder values for the pipe file descriptors
+  new_client_node->Client->client_Index = indexClient + 1;
+  new_client_node->Client->req_pipe = -1;
+  new_client_node->Client->resp_pipe = -1;
+  new_client_node->Client->notif_pipe = -1;
+  new_client_node->next = NULL;
+
+  // Add the new client to the linked list
+  if (session->head == NULL)
+  {
+    session->head = new_client_node; // If the list is empty, make this the head
+  }
+  else
+  {
+    // Otherwise, traverse the list and add it to the end
+    ClientsInSession *current = session->head;
+    while (current->next != NULL)
+    {
+      current = current->next;
+    }
+    current->next = new_client_node;
+  }
+
+  // Increment the activeClients count
+  session->activeClients++;
+
+  printf("Client added successfully. Active clients: %d\n", session->activeClients);
+  return new_client_node->Client; // Success
+}
+// Function to remove a client from the session by req_pipe_path
+int remove_client_from_session(SessionData *session, const char *req_pipe_path)
+{
+  // Check if the session is empty
+  if (session->head == NULL)
+  {
+    printf("Error: No clients in the session.\n");
+    return -1; // No clients to remove
+  }
+
+  ClientsInSession *current = session->head;
+  ClientsInSession *prev = NULL;
+
+  // Traverse the linked list to find the client to remove
+  while (current != NULL)
+  {
+    // If the current client's request pipe path matches
+    if (strcmp(current->Client->req_pipe_path, req_pipe_path) == 0)
+    {
+      // Update the linked list
+      if (prev == NULL)
+      {
+        session->head = current->next; // Update head if it's the first client
+      }
+      else
+      {
+        prev->next = current->next; // Skip the current client
+      }
+
+      // Free the dynamically allocated memory for the client
+      free(current->Client->req_pipe_path);
+      free(current->Client->resp_pipe_path);
+      free(current->Client->notif_pipe_path);
+      free(current->Client); // Free the client structure
+      free(current);         // Free the linked list node
+
+      // Decrement the activeClients count
+      session->activeClients--;
+
+      printf("Client with req_pipe_path '%s' removed successfully. Active clients: %d\n", req_pipe_path, session->activeClients);
+      return 0; // Success
+    }
+
+    // Move to the next client
+    prev = current;
+    current = current->next;
+  }
+
+  // If no client with the given req_pipe_path was found
+  printf("Error: Client with req_pipe_path '%s' not found.\n", req_pipe_path);
+  return -1; // Client not found
+}
 
 // ClientsInSession *find_client(ClientsInSession *head, const char *resp_pipe_path)
 // {

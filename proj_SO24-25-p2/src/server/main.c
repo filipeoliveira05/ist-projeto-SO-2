@@ -30,9 +30,8 @@ char register_FIFO_name[256];
 char *jobs_directory = NULL;
 int server_pipe_fd;
 
-char req_pipe_path[MAX_PIPE_PATH_LENGTH + 1];
-char resp_pipe_path[MAX_PIPE_PATH_LENGTH + 1];
-char notif_pipe_path[MAX_PIPE_PATH_LENGTH + 1];
+int indexClientCount = 0;
+sem_t client_thread_semaphore;
 
 /**
  * helper function to send messages
@@ -297,6 +296,225 @@ static void *get_file(void *arguments)
   pthread_exit(NULL);
 }
 
+void createsRegisterFIFO()
+{
+  if (strlen(register_FIFO_name) == 0)
+  {
+    write_str(STDERR_FILENO, "Invalid or empty FIFO name\n");
+  }
+
+  // Remove o pipe, se existir
+  if (unlink(register_FIFO_name) != 0 && errno != ENOENT)
+  {
+    perror("unlink failed");
+    pthread_exit(NULL); // Exit thread instead of the whole process
+  }
+  if (mkfifo(register_FIFO_name, 0777) != 0)
+  {
+    perror("mkfifo failed");
+    pthread_exit(NULL);
+  }
+}
+
+void *verify_requests(void *arg)
+{
+  Client *client = (Client *)arg;
+
+  char buf[MAX_PIPE_BUFFER_SIZE];
+  char key[MAX_PIPE_PATH_LENGTH + 1];
+  client->req_pipe = open(client->req_pipe_path, O_RDONLY);
+  if (client->req_pipe == -1)
+  {
+    perror("Verify_requests: Failed to open request pipe");
+    return NULL;
+  }
+  fprintf(stderr, "Verify_requests: Waiting for requests.\n");
+  int resp_pipe_fd = -1;
+
+  while (1)
+  {
+
+    ssize_t bytes_read = read(client->req_pipe, buf, sizeof(buf));
+
+    if (bytes_read == 0)
+    {
+      // TODO KVS DISCONECT
+    }
+
+    if (bytes_read > 0)
+    {
+      buf[bytes_read] = '\0'; // Null-terminate for safe string operations
+      fprintf(stderr, "Verify_requests: Read request from pipe: %s\n", buf);
+      switch (buf[0])
+      {
+      case '2':
+        fprintf(stderr, "Verify_requests: Disconnect request received.\n");
+        // TODO kvs disconec - eleminar todas subs do client
+        client->resp_pipe = open(client->resp_pipe_path, O_WRONLY);
+        write(client->resp_pipe, "20", 2);
+        close(client->resp_pipe);
+        fprintf(stderr, "Verify_requests: Disconnect response sent.\n");
+        break;
+
+      case '3':
+        strcpy(key, buf + 1);
+        fprintf(stderr, "Verify_requests: Subscribe request received for key: %s\n", key);
+        int subscribe_result = kvs_subscribe(client->notif_pipe_path, key); // kvs_subscribe should return 1 on success, 0 on failure
+        client->resp_pipe = open(client->resp_pipe_path, O_WRONLY);
+        if (client->resp_pipe == -1)
+        {
+          perror("Verify_requests: Failed to open response pipe for writing");
+        }
+        else
+        {
+          const char *response_code = (subscribe_result == 1) ? "30" : "31";
+          ssize_t bytes_written = write(client->resp_pipe, response_code, 2);
+          if (bytes_written < 2)
+          {
+            perror("Verify_requests: Failed to write subscribe response to response pipe");
+          }
+          else
+          {
+            fprintf(stderr, "Verify_requests: Subscribe response successfully sent for key: %s\n", key);
+            if (subscribe_result)
+            {
+              fprintf(stderr, "Verify_requests: Subscription Successfull\n");
+            }
+            else
+            {
+              fprintf(stderr, "Verify_requests: Subscription Failed\n");
+            }
+          }
+          close(client->resp_pipe);
+        }
+
+        break;
+
+      case '4':
+        strcpy(key, buf + 1);
+        fprintf(stderr, "Verify_requests: Unsubscribe request received for key: %s\n", key);
+        int unsubscribe_result = kvs_unsubscribe(client->notif_pipe_path, key); // kvs_unsubscribe should return 1 on success, 0 on failure
+        client->resp_pipe = open(client->resp_pipe_path, O_WRONLY);
+        if (client->resp_pipe == -1)
+        {
+          perror("Verify_requests: Failed to open response pipe for writing");
+        }
+        else
+        {
+          const char *response_code = (unsubscribe_result == 1) ? "40" : "41"; // "40" for success, "41" for failure
+          ssize_t bytes_written = write(client->resp_pipe, response_code, 2);
+          if (bytes_written < 2)
+          {
+            perror("Verify_requests: Failed to write unsubscribe response to response pipe");
+          }
+          else
+          {
+            fprintf(stderr, "Verify_requests: Unsubscribe response successfully sent for key: %s\n", key);
+            if (unsubscribe_result)
+            {
+              fprintf(stderr, "Verify_requests: Unsubscription Successful\n");
+            }
+            else
+            {
+              fprintf(stderr, "Verify_requests: Unsubscription Failed\n");
+            }
+          }
+          close(client->resp_pipe);
+        }
+
+        break;
+
+      default:
+        break;
+      }
+    }
+  }
+}
+void *verify_server_pipe(void *arg)
+{
+  SessionData *sessionData = (SessionData *)arg; // Cast back to Client *
+  char req_pipe_path[MAX_PIPE_PATH_LENGTH];
+  char resp_pipe_path[MAX_PIPE_PATH_LENGTH];
+  char notif_pipe_path[MAX_PIPE_PATH_LENGTH];
+  char buf[MAX_PIPE_BUFFER_SIZE];
+  int resp_pipe_fd;
+  int req_pipe_fd;
+  server_pipe_fd = open(register_FIFO_name, O_RDONLY);
+  sem_init(&client_thread_semaphore, 0, 10);
+  pthread_t client_threads[MAX_SESSION_COUNT];
+  int active_thread_count = 0;
+  while (1)
+  {
+    ssize_t bytes_read = read(server_pipe_fd, buf, 1 + (MAX_PIPE_PATH_LENGTH * 3));
+    if (buf[0] == '1')
+    {
+
+      memcpy(req_pipe_path, buf + 1, MAX_PIPE_PATH_LENGTH);
+      printf("CLIENT %c CONECTED\n", req_pipe_path[strlen(req_pipe_path) - 1]); // Print to verify
+      printf("req_pipe_path: %s\n", req_pipe_path);                             // Print to verify
+
+      memcpy(resp_pipe_path, buf + 1 + MAX_PIPE_PATH_LENGTH, MAX_PIPE_PATH_LENGTH);
+      printf("resp_pipe_path: %s\n", resp_pipe_path); // Print to verify
+
+      memcpy(notif_pipe_path, buf + 1 + 2 * MAX_PIPE_PATH_LENGTH, MAX_PIPE_PATH_LENGTH);
+      printf("notif_pipe_path: %s\n", notif_pipe_path); // Print to verify
+
+      int value;
+      sem_getvalue(&client_thread_semaphore, &value);
+      printf("Slots available before acquiring: %d\n", value);
+
+      // Wait for a slot to handle the client (using semaphore)
+      sem_wait(&client_thread_semaphore); // Block if no available threads
+
+      // Print the updated available slots after acquiring the slot
+      sem_getvalue(&client_thread_semaphore, &value);
+      printf("Slots available after acquiring: %d\n", value);
+      // Join threads that have completed before spawning new ones
+      // for (int i = 0; i < active_thread_count; i++)
+      // {
+      //   if (pthread_join(client_threads[i], NULL) == 0)
+      //   {
+      //     // Shift remaining threads down
+      //     for (int j = i; j < active_thread_count - 1; j++)
+      //     {
+      //       client_threads[j] = client_threads[j + 1];
+      //     }
+      //     active_thread_count--;
+      //     i--; // Recheck the current index
+      //   }
+      // }
+      Client *client = add_client_to_session(sessionData, req_pipe_path, resp_pipe_path, notif_pipe_path, indexClientCount);
+      if (client != NULL)
+      {
+        indexClientCount++;
+        printf("Client %d:\n", client->client_Index);
+        printf("  Request Pipe Path: %s\n", client->req_pipe_path);
+        printf("  Response Pipe Path: %s\n", client->resp_pipe_path);
+        printf("  Notification Pipe Path: %s\n", client->notif_pipe_path);
+        printf("  Request Pipe FD: %d\n", client->req_pipe);
+        printf("  Response Pipe FD: %d\n", client->resp_pipe);
+        printf("  Notification Pipe FD: %d\n", client->notif_pipe);
+        printf("\n");
+
+        resp_pipe_fd = open(resp_pipe_path, O_WRONLY);
+        write(resp_pipe_fd, "0", 1);
+
+        req_pipe_fd = open(req_pipe_path, O_RDONLY);
+        // pthread_t thread_request_pipe;
+        pthread_create(&client_threads[active_thread_count++], NULL, verify_requests, client);
+        // pthread_join(thread_request_pipe, NULL);
+      }
+    }
+    else
+    {
+      strncpy(resp_pipe_path, buf + 1 + MAX_PIPE_PATH_LENGTH, MAX_PIPE_PATH_LENGTH);
+      resp_pipe_fd = open(resp_pipe_path, O_WRONLY);
+      write(resp_pipe_fd, "1", 1);
+    }
+    close(resp_pipe_fd);
+  }
+  sem_destroy(&client_thread_semaphore);
+}
 static void dispatch_threads(DIR *dir)
 {
   pthread_t *threads = malloc(max_threads * sizeof(pthread_t));
@@ -324,6 +542,11 @@ static void dispatch_threads(DIR *dir)
 
   // ler do FIFO de registo
 
+  pthread_t thread_server_pipe;
+  pthread_create(&thread_server_pipe, NULL, verify_server_pipe, (void *)sessionData);
+
+  pthread_join(thread_server_pipe, NULL);
+
   for (unsigned int i = 0; i < max_threads; i++)
   {
     if (pthread_join(threads[i], NULL) != 0)
@@ -336,176 +559,6 @@ static void dispatch_threads(DIR *dir)
   }
 
   free(threads);
-}
-
-void createsRegisterFIFO()
-{
-  if (strlen(register_FIFO_name) == 0)
-  {
-    write_str(STDERR_FILENO, "Invalid or empty FIFO name\n");
-  }
-
-  // Remove o pipe, se existir
-  if (unlink(register_FIFO_name) != 0 && errno != ENOENT)
-  {
-    perror("unlink failed");
-    pthread_exit(NULL); // Exit thread instead of the whole process
-  }
-  if (mkfifo(register_FIFO_name, 0777) != 0)
-  {
-    perror("mkfifo failed");
-    pthread_exit(NULL);
-  }
-}
-
-void *verify_requests()
-{
-  char buf[MAX_PIPE_BUFFER_SIZE];
-  char key[MAX_PIPE_PATH_LENGTH + 1];
-  int req_pipe_fd = open(req_pipe_path, O_RDONLY);
-  if (req_pipe_fd == -1)
-  {
-    perror("Verify_requests: Failed to open request pipe");
-    return NULL;
-  }
-  fprintf(stderr, "Verify_requests: Waiting for requests.\n");
-  int resp_pipe_fd = -1;
-
-  while (1)
-  {
-    // printf("HELLO\n");
-
-    ssize_t bytes_read = read(req_pipe_fd, buf, sizeof(buf));
-    if (bytes_read > 0)
-    {
-      buf[bytes_read] = '\0'; // Null-terminate for safe string operations
-      fprintf(stderr, "Verify_requests: Read request from pipe: %s\n", buf);
-      switch (buf[0])
-      {
-      case '2':
-        fprintf(stderr, "Verify_requests: Disconnect request received.\n");
-
-        resp_pipe_fd = open(resp_pipe_path, O_WRONLY);
-        write(resp_pipe_fd, "20", 2);
-        close(resp_pipe_fd);
-        fprintf(stderr, "Verify_requests: Disconnect response sent.\n");
-
-        break;
-
-      case '3':
-        strcpy(key, buf + 1);
-        fprintf(stderr, "Verify_requests: Subscribe request received for key: %s\n", key);
-        int subscribe_result = kvs_subscribe(notif_pipe_path, key); // kvs_subscribe should return 1 on success, 0 on failure
-        resp_pipe_fd = open(resp_pipe_path, O_WRONLY);
-        if (resp_pipe_fd == -1)
-        {
-          perror("Verify_requests: Failed to open response pipe for writing");
-        }
-        else
-        {
-          const char *response_code = (subscribe_result == 1) ? "30" : "31";
-          ssize_t bytes_written = write(resp_pipe_fd, response_code, 2);
-          if (bytes_written < 2)
-          {
-            perror("Verify_requests: Failed to write subscribe response to response pipe");
-          }
-          else
-          {
-            fprintf(stderr, "Verify_requests: Subscribe response successfully sent for key: %s\n", key);
-            if (subscribe_result)
-            {
-              fprintf(stderr, "Verify_requests: Subscription Successfull\n");
-            }
-            else
-            {
-              fprintf(stderr, "Verify_requests: Subscription Failed\n");
-            }
-          }
-          close(resp_pipe_fd);
-        }
-
-        break;
-
-      case '4':
-        strcpy(key, buf + 1);
-        fprintf(stderr, "Verify_requests: Unsubscribe request received for key: %s\n", key);
-        int unsubscribe_result = kvs_unsubscribe(notif_pipe_path, key); // kvs_unsubscribe should return 1 on success, 0 on failure
-        resp_pipe_fd = open(resp_pipe_path, O_WRONLY);
-        if (resp_pipe_fd == -1)
-        {
-          perror("Verify_requests: Failed to open response pipe for writing");
-        }
-        else
-        {
-          const char *response_code = (unsubscribe_result == 1) ? "40" : "41"; // "40" for success, "41" for failure
-          ssize_t bytes_written = write(resp_pipe_fd, response_code, 2);
-          if (bytes_written < 2)
-          {
-            perror("Verify_requests: Failed to write unsubscribe response to response pipe");
-          }
-          else
-          {
-            fprintf(stderr, "Verify_requests: Unsubscribe response successfully sent for key: %s\n", key);
-            if (unsubscribe_result)
-            {
-              fprintf(stderr, "Verify_requests: Unsubscription Successful\n");
-            }
-            else
-            {
-              fprintf(stderr, "Verify_requests: Unsubscription Failed\n");
-            }
-          }
-          close(resp_pipe_fd);
-        }
-
-        break;
-
-      default:
-        break; // TODO erro dps fazer isto
-      }
-    }
-  }
-}
-
-void *verify_server_pipe()
-{
-  char buf[MAX_PIPE_BUFFER_SIZE];
-  int resp_pipe_fd;
-  int req_pipe_fd;
-  server_pipe_fd = open(register_FIFO_name, O_RDONLY);
-
-  while (1)
-  {
-    read(server_pipe_fd, buf, sizeof(buf));
-    if (buf[0] == '1')
-    {
-      printf("BUFFER: '%s'\n", buf);
-      memcpy(req_pipe_path, buf + 1, MAX_PIPE_PATH_LENGTH);
-      printf("CLIENT %c CONECTED\n", req_pipe_path[strlen(req_pipe_path) - 1]); // Print to verify
-      printf("req_pipe_path: %s\n", req_pipe_path);                             // Print to verify
-
-      memcpy(resp_pipe_path, buf + 1 + MAX_PIPE_PATH_LENGTH, MAX_PIPE_PATH_LENGTH);
-      printf("resp_pipe_path: %s\n", resp_pipe_path); // Print to verify
-
-      memcpy(notif_pipe_path, buf + 1 + 2 * MAX_PIPE_PATH_LENGTH, MAX_PIPE_PATH_LENGTH);
-      printf("notif_pipe_path: %s\n", notif_pipe_path); // Print to verify
-
-      resp_pipe_fd = open(resp_pipe_path, O_WRONLY);
-      write(resp_pipe_fd, "0", 1);
-
-      req_pipe_fd = open(req_pipe_path, O_RDONLY);
-      pthread_t thread_request_pipe;
-      pthread_create(&thread_request_pipe, NULL, verify_requests, NULL);
-      pthread_detach(thread_request_pipe);
-    }
-    else
-    {
-      strncpy(resp_pipe_path, buf + 1 + MAX_PIPE_PATH_LENGTH, MAX_PIPE_PATH_LENGTH);
-      resp_pipe_fd = open(resp_pipe_path, O_WRONLY);
-      write(resp_pipe_fd, "1", 1);
-    }
-    close(resp_pipe_fd);
-  }
 }
 
 int main(int argc, char **argv)
@@ -569,11 +622,7 @@ int main(int argc, char **argv)
   {
     perror("malloc failed");
   }
-
   strncpy(sessionData->server_pipe_path, register_FIFO_name, strlen(register_FIFO_name) + 1);
-
-  pthread_t thread_server_pipe;
-  pthread_create(&thread_server_pipe, NULL, verify_server_pipe, NULL);
 
   if (kvs_init())
   {
@@ -602,10 +651,10 @@ int main(int argc, char **argv)
     active_backups--;
   }
 
-  pthread_detach(thread_server_pipe);
-
   unlink(register_FIFO_name);
   kvs_terminate();
+  free(sessionData->server_pipe_path);
+  free(sessionData);
 
   return 0;
 }
