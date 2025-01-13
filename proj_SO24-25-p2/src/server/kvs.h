@@ -2,18 +2,16 @@
 #define KEY_VALUE_STORE_H
 #define TABLE_SIZE 26
 
+#include "src/common/constants.h"
 #include <pthread.h>
 #include <stddef.h>
-#include "src/common/constants.h"
 
-typedef struct ClientSubscribed
-{
+typedef struct ClientSubscribed {
   struct ClientSubscribed *next;
   char notif_pipe_path[MAX_PIPE_PATH_LENGTH + 1];
 } ClientSubscribed;
 
-typedef struct KeyNode
-{
+typedef struct KeyNode {
   char *key;
   char *value;
   struct KeyNode *next;
@@ -21,8 +19,7 @@ typedef struct KeyNode
   int n_clients;
 } KeyNode;
 
-typedef struct HashTable
-{
+typedef struct HashTable {
   KeyNode *table[TABLE_SIZE];
   pthread_rwlock_t tablelock;
 } HashTable;
@@ -49,7 +46,8 @@ char *read_pair(HashTable *ht, const char *key);
 /// Finds a key in the hash table.
 /// @param ht Pointer to the hash table where the key should be searched.
 /// @param key The key to search for.
-/// @return A pointer to the KeyNode containing the key, or NULL if the key is not found.
+/// @return A pointer to the KeyNode containing the key, or NULL if the key is
+/// not found.
 KeyNode *find_key(HashTable *ht, const char *key);
 
 /// Deletes a pair from the table.
@@ -59,7 +57,8 @@ KeyNode *find_key(HashTable *ht, const char *key);
 int delete_pair(HashTable *ht, const char *key);
 
 /// Deletes all subscriptions associated with a specific key.
-/// @param key_node Pointer to the KeyNode for which all subscriptions should be deleted.
+/// @param key_node Pointer to the KeyNode for which all subscriptions should be
+/// deleted.
 void delete_all_subscriptions_of_key(KeyNode *key_node);
 
 /// Frees the hashtable.

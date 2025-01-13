@@ -5,16 +5,15 @@
 
 #include "src/common/constants.h"
 
-typedef struct Client
-{
-    char *req_pipe_path;
-    char *resp_pipe_path;
-    char *notif_pipe_path;
-    char *server_pipe_path;
-    int req_pipe;
-    int resp_pipe;
-    int notif_pipe;
-    int server_pipe;
+typedef struct Client {
+  char *req_pipe_path;
+  char *resp_pipe_path;
+  char *notif_pipe_path;
+  char *server_pipe_path;
+  int req_pipe;
+  int resp_pipe;
+  int notif_pipe;
+  int server_pipe;
 } Client;
 
 /// Connects to a kvs server.
@@ -22,8 +21,9 @@ typedef struct Client
 /// @param resp_pipe_path Path to the name pipe to be created for responses.
 /// @param server_pipe_path Path to the name pipe where the server is listening.
 /// @return 0 if the connection was established successfully, 1 otherwise.
-int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path, char const *server_pipe_path,
-                char const *notif_pipe_path, Client *client);
+int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path,
+                char const *server_pipe_path, char const *notif_pipe_path,
+                Client *client);
 
 /// Disconnects from an KVS server.
 /// @return 0 in case of success, 1 otherwise.
@@ -31,13 +31,15 @@ int kvs_disconnect(Client *client);
 
 /// Requests a subscription for a key
 /// @param key Key to be subscribed
-/// @return 1 if the key was subscribed successfully (key existing), 0 otherwise.
+/// @return 1 if the key was subscribed successfully (key existing), 0
+/// otherwise.
 
 int kvs_subscribe(const char *key, Client *client);
 
 /// Remove a subscription for a key
 /// @param key Key to be unsubscribed
-/// @return 0 if the key was unsubscribed successfully  (subscription existed and was removed), 1 otherwise.
+/// @return 0 if the key was unsubscribed successfully  (subscription existed
+/// and was removed), 1 otherwise.
 
 int kvs_unsubscribe(const char *key, Client *client);
 

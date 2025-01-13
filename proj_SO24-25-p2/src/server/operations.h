@@ -1,22 +1,20 @@
 #ifndef KVS_OPERATIONS_H
 #define KVS_OPERATIONS_H
 
-#include <stddef.h>
-#include <dirent.h>
 #include "pthread.h"
+#include <dirent.h>
+#include <stddef.h>
 
-#include "constants.h"
 #include "../common/constants.h"
+#include "constants.h"
 
-typedef struct SharedData
-{
+typedef struct SharedData {
   DIR *dir;
   char *dir_name;
   pthread_mutex_t directory_mutex;
 } SharedData;
 
-typedef struct Client
-{
+typedef struct Client {
   int client_Index;
   int thread_slot;
   char *req_pipe_path;
@@ -27,15 +25,13 @@ typedef struct Client
   int notif_pipe;
 } Client;
 
-typedef struct ClientsInSession
-{
+typedef struct ClientsInSession {
   Client *Client;
   struct ClientsInSession *next;
 
 } ClientsInSession;
 
-typedef struct SessionData
-{
+typedef struct SessionData {
   int activeClients;
   char *server_pipe_path;
   ClientsInSession *head;
@@ -99,7 +95,8 @@ void set_n_current_backups(int _n_current_backups);
 int get_n_current_backups();
 
 /// Disconnects a client by its notification pipe path.
-/// @param notif_pipe_path The path to the notification pipe associated with the client.
+/// @param notif_pipe_path The path to the notification pipe associated with the
+/// client.
 /// @return 1 if the client was successfully disconnected, 0 otherwise.
 int kvs_disconnect_client(const char *notif_pipe_path);
 
@@ -107,13 +104,15 @@ int kvs_disconnect_client(const char *notif_pipe_path);
 /// @param notif_path The path to the notification pipe for the client.
 /// @param key The key to subscribe to.
 /// @return 1 if the subscription was successful, 0 otherwise.
-int kvs_subscribe(char notif_path[MAX_PIPE_PATH_LENGTH], char key[MAX_STRING_SIZE]);
+int kvs_subscribe(char notif_path[MAX_PIPE_PATH_LENGTH],
+                  char key[MAX_STRING_SIZE]);
 
 /// Unsubscribes a client from notifications for a specific key.
 /// @param notif_path The path to the notification pipe for the client.
 /// @param key The key to unsubscribe from.
 /// @return 1 if the unsubscription was successful, 0 otherwise.
-int kvs_unsubscribe(char notif_path[MAX_PIPE_PATH_LENGTH], char key[MAX_STRING_SIZE]);
+int kvs_unsubscribe(char notif_path[MAX_PIPE_PATH_LENGTH],
+                    char key[MAX_STRING_SIZE]);
 
 /// Adds a client to the current session.
 /// @param session Pointer to the session data.
@@ -122,8 +121,12 @@ int kvs_unsubscribe(char notif_path[MAX_PIPE_PATH_LENGTH], char key[MAX_STRING_S
 /// @param notif_pipe_path Path to the notification pipe of the client.
 /// @param indexClient Index of the client in the session.
 /// @param thread_slot The thread slot assigned to the client.
-/// @return A pointer to the newly added client, or NULL if the client could not be added.
-Client *add_client_to_session(SessionData *session, const char *req_pipe_path, const char *resp_pipe_path, const char *notif_pipe_path, int indexClient, int thread_slot);
+/// @return A pointer to the newly added client, or NULL if the client could not
+/// be added.
+Client *add_client_to_session(SessionData *session, const char *req_pipe_path,
+                              const char *resp_pipe_path,
+                              const char *notif_pipe_path, int indexClient,
+                              int thread_slot);
 
 /// Removes a client from the current session using the request pipe path.
 /// @param session Pointer to the session data.
