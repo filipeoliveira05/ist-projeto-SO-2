@@ -101,18 +101,6 @@ void block_sigusr1() {
   }
 }
 
-/*
-// Verifica se o sinal SIGUSR1 foi recebido
-if (atomic_load(&sigusr1_received) == 1) {
-
-  remove_all_clients(sessionData); //Remove todos os clientes da sessão
-  delete_all_subscriptions(); // Remove todas as subscrições da tabela
-
-  // Deixar as tarefas prontas para atender novos clientes
-  atomic_store(&sigusr1_received, 0); // Resetar o sinal para permitir novos
-"refreshes"
-}
-*/
 
 /**
  * helper function to send messages
@@ -355,7 +343,7 @@ void createsRegisterFIFO() {
 
 void *handle_requests(void *arg) {
   Client *client = (Client *)arg;
-
+  
   char buf[MAX_PIPE_BUFFER_SIZE];
   char key[MAX_PIPE_PATH_LENGTH + 1];
   client->req_pipe = open(client->req_pipe_path, O_RDONLY);
@@ -516,6 +504,22 @@ int find_free_thread_slot() {
   return -1; // No free slot available
 }
 
+//TESTE PRÁTICO
+/*
+int show_uptime() {
+  int uptime = 0;
+
+  while (1) {
+    printf("Uptime: %d\n", uptime);
+    sleep(20);
+    uptime += 20;
+  }
+}
+
+pthread_t thread_uptime;
+pthread_create(&thread_uptime, NULL, show_uptime, NULL);
+*/
+
 void *handle_server_pipe() {
   char req_pipe_path[MAX_PIPE_PATH_LENGTH];
   char resp_pipe_path[MAX_PIPE_PATH_LENGTH];
@@ -608,6 +612,8 @@ void *handle_server_pipe() {
   sem_destroy(&client_thread_semaphore);
 }
 
+
+
 static void dispatch_threads(DIR *dir) {
   pthread_t *threads = malloc(max_threads * sizeof(pthread_t));
 
@@ -651,6 +657,8 @@ static void dispatch_threads(DIR *dir) {
 
   free(threads);
 }
+
+
 
 int main(int argc, char **argv) {
   if (argc < 5) {
@@ -701,11 +709,11 @@ int main(int argc, char **argv) {
   createsRegisterFIFO();
   fprintf(stderr, "CRIOU REGISTER FIFO: %s\n", register_FIFO_name);
 
-  sessionData->server_pipe_path =
-      malloc(strlen(register_FIFO_name) + 1); // Allocate memory
+  sessionData->server_pipe_path = malloc(strlen(register_FIFO_name) + 1); // Allocate memory
   if (sessionData->server_pipe_path == NULL) {
     perror("malloc failed");
   }
+  
   strncpy(sessionData->server_pipe_path, register_FIFO_name,
           strlen(register_FIFO_name) + 1);
 
